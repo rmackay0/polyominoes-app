@@ -197,7 +197,29 @@
     overflow: auto;
   }
 
-  .board-controls { display: flex; gap: 8px; align-items: center; }
+  .trash-zone {
+    width: 100%;
+    max-width: 480px;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 2px dashed var(--danger);
+    border-radius: 10px;
+    background: rgba(163,74,74,0.08);
+    color: var(--danger);
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: background 0.15s, border-color 0.15s, transform 0.15s;
+  }
+  .trash-zone .trash-icon { font-size: 1.1rem; }
+  .trash-zone.drag-over {
+    background: rgba(163,74,74,0.35);
+    border-color: #ff8080;
+    border-style: solid;
+    transform: scale(1.03);
+  }
 
   .error-toast {
     position: fixed;
@@ -261,6 +283,7 @@
     transition: left 0.05s linear, top 0.05s linear;
   }
   .ghost.invalid .piece-svg { filter: grayscale(0.5) brightness(0.7); }
+  .ghost.trashing { opacity: 0.35; transform: scale(0.6); transition: left 0.05s linear, top 0.05s linear, opacity 0.15s, transform 0.15s; }
 
   .sel-toolbar {
     position: fixed;
@@ -317,14 +340,23 @@
 <div class="main-row">
 
   <div class="board-area">
-    <div class="board-controls">
-      <button class="btn-trash" id="clear-board-btn">&#128465; Clear</button>
+    <div id="trash-zone" class="trash-zone">
+      <span class="trash-icon">&#128465;</span>
+      <span>Drag piece here to delete</span>
     </div>
     <div id="board-outer">
       <div id="board"></div>
       <div id="pieces-layer"></div>
     </div>
     <div class="info-bar">Open: <b id="holes-count">64</b>/<span id="total-count">64</span></div>
+    <button class="btn-trash" id="clear-board-btn">
+      <svg width="12" height="12" viewBox="0 0 14 14" style="vertical-align:middle;margin-right:6px;" fill="none">
+        <rect x="0" y="0" width="6" height="6" fill="currentColor"/>
+        <rect x="8" y="0" width="6" height="6" fill="currentColor"/>
+        <rect x="0" y="8" width="6" height="6" fill="currentColor"/>
+        <rect x="8" y="8" width="6" height="6" fill="currentColor"/>
+      </svg>Clear entire grid
+    </button>
     <p class="hint">Drag to place &bull; click to select &bull; arrows/R/T/D/Del/Z</p>
   </div>
 
@@ -622,6 +654,7 @@ function undo(){
 
 const boardEl = document.getElementById('board');
 const piecesLayerEl = document.getElementById('pieces-layer');
+const trashZoneEl = document.getElementById('trash-zone');
 
 /* ═══════════════════════════════════════════════
    BOARD SETUP
@@ -1136,14 +1169,32 @@ function updateDrag(clientX, clientY){
   return { anchorRow, anchorCol, valid };
 }
 
+function isOverTrashZone(clientX, clientY){
+  const r = trashZoneEl.getBoundingClientRect();
+  return clientX>=r.left && clientX<=r.right && clientY>=r.top && clientY<=r.bottom;
+}
+
 function onDragMove(e){
   if(!drag) return;
   if(drag.mode==='move'){
     if(Math.abs(e.clientX-drag.startX)>3 || Math.abs(e.clientY-drag.startY)>3) drag.moved = true;
   }
-  updateDrag(e.clientX, e.clientY);
+  const overTrash = isOverTrashZone(e.clientX, e.clientY);
+  trashZoneEl.classList.toggle('drag-over', overTrash);
+  drag.ghostEl.classList.toggle('trashing', overTrash);
+  // While hovering the trash zone, leave the ghost at its last board
+  // position (shrunk + faded) rather than running the board-relative math
+  // for a point that isn't over the board at all — but do clear any
+  // leftover green/red cell highlight from just before it crossed in.
+  if(overTrash) clearHighlights();
+  else updateDrag(e.clientX, e.clientY);
 }
 
+// Dragging a piece off the grid edge no longer deletes it — that's what
+// used to conflict with Infinite Grid's expansion (the two features were
+// fighting over what an off-board drop should mean). Deletion now only
+// happens via this explicit trash zone, for both a new tray piece (just
+// cancels its creation) and an existing placed piece (removes it).
 function onDragEnd(e){
   if(!drag) return;
   window.removeEventListener('pointermove', onDragMove);
@@ -1152,17 +1203,32 @@ function onDragEnd(e){
   if(drag.mode==='move'){
     if(Math.abs(e.clientX-drag.startX)>3 || Math.abs(e.clientY-drag.startY)>3) drag.moved = true;
   }
-  const { anchorRow, anchorCol } = updateDrag(e.clientX, e.clientY);
+
+  const overTrash = isOverTrashZone(e.clientX, e.clientY);
+  trashZoneEl.classList.remove('drag-over');
   clearHighlights();
   drag.ghostEl.remove();
 
-  const offBoard = isCompletelyOffBoard(drag.cells, anchorRow, anchorCol);
+  if(overTrash){
+    if(drag.mode==='move' && drag.moved){
+      pushUndo();
+      placedPieces = placedPieces.filter(p=>p.id!==drag.sourceId);
+      if(pendingPlacementId===drag.sourceId) pendingPlacementId = null;
+      if(selectedId===drag.sourceId) selectedId = null;
+      maybeContractGrid();
+    }
+    drag = null;
+    renderAll();
+    return;
+  }
+
+  const { anchorRow, anchorCol } = updateDrag(e.clientX, e.clientY);
 
   if(drag.mode==='new'){
     // A brand new piece never dropped anywhere on the board at all just
     // cancels; anything that overlaps the grid at all gets placed, valid
     // or not (grid locking still applies — it snaps to the cell grid).
-    if(!offBoard){
+    if(!isCompletelyOffBoard(drag.cells, anchorRow, anchorCol)){
       pushUndo();
       const id = 'p'+(placedIdCounter++);
       const piece = { id, cells: drag.cells, color: drag.color, name: drag.name, anchorRow, anchorCol };
@@ -1173,21 +1239,13 @@ function onDragEnd(e){
     }
   } else if(drag.mode==='move'){
     const piece = placedPieces.find(p=>p.id===drag.sourceId);
-    if(piece){
-      if(drag.moved && offBoard && !infiniteGrid){
-        pushUndo();
-        placedPieces = placedPieces.filter(p=>p.id!==piece.id);
-        if(pendingPlacementId===piece.id) pendingPlacementId = null;
-        if(selectedId===piece.id) selectedId = null;
-        maybeContractGrid();
-      } else if(drag.moved){
-        pushUndo();
-        piece.anchorRow = anchorRow;
-        piece.anchorCol = anchorCol;
-        maybeExpandGrid(piece);
-        updatePendingPlacement(piece.id);
-        maybeContractGrid();
-      }
+    if(piece && drag.moved){
+      pushUndo();
+      piece.anchorRow = anchorRow;
+      piece.anchorCol = anchorCol;
+      maybeExpandGrid(piece);
+      updatePendingPlacement(piece.id);
+      maybeContractGrid();
     }
   }
   drag = null;
@@ -1272,9 +1330,9 @@ function updateSelToolbar(){
   bar.id = 'sel-toolbar';
   bar.style.left = rect.left + 'px';
   // Prefer placing the toolbar above the piece, but flip below it when
-  // there isn't enough headroom (e.g. a floating piece sitting right under
-  // the board controls) so it never overlaps other UI.
-  const controlsRect = document.querySelector('.board-controls').getBoundingClientRect();
+  // there isn't enough headroom (e.g. a piece sitting right under the
+  // trash zone) so it never overlaps other UI.
+  const controlsRect = trashZoneEl.getBoundingClientRect();
   const wouldOverlapControls = (rect.top - 34) < controlsRect.bottom + 4;
   bar.style.top = (wouldOverlapControls ? rect.bottom + 6 : rect.top - 34) + 'px';
 

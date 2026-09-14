@@ -627,21 +627,39 @@ function buildSolidShape(cells, color, cellSize, gapSize){
   container.style.position = 'relative';
   container.style.width = (cols*cellSize + (cols-1)*gapSize) + 'px';
   container.style.height = (rows*cellSize + (rows-1)*gapSize) + 'px';
+
+  function patch(x, y, w, h){
+    const el = document.createElement('div');
+    el.style.position = 'absolute';
+    el.style.left = x+'px'; el.style.top = y+'px';
+    el.style.width = w+'px'; el.style.height = h+'px';
+    el.style.background = color;
+    container.appendChild(el);
+  }
+
   cells.forEach(([r,c])=>{
     const hasTop = hasCellAt(cells, r-1, c);
     const hasBottom = hasCellAt(cells, r+1, c);
     const hasLeft = hasCellAt(cells, r, c-1);
     const hasRight = hasCellAt(cells, r, c+1);
+    const x = c*(cellSize+gapSize), y = r*(cellSize+gapSize);
+
+    // The cell's own box stays at its TRUE size always — the border/radius
+    // trace only this true footprint, on external sides only. (Earlier this
+    // box itself grew to bridge gaps, which dragged its border along for
+    // the ride and produced little border "flags" poking into the seam at
+    // concave corners of L/T/S/Z-shaped pieces — jagged, not solid.)
     const blk = document.createElement('div');
     blk.className = 'blk';
     blk.dataset.dr = r;
     blk.dataset.dc = c;
     blk.style.position = 'absolute';
-    blk.style.left = (c*(cellSize+gapSize)) + 'px';
-    blk.style.top = (r*(cellSize+gapSize)) + 'px';
-    blk.style.width = (cellSize + (hasRight ? gapSize : 0)) + 'px';
-    blk.style.height = (cellSize + (hasBottom ? gapSize : 0)) + 'px';
+    blk.style.left = x + 'px';
+    blk.style.top = y + 'px';
+    blk.style.width = cellSize + 'px';
+    blk.style.height = cellSize + 'px';
     blk.style.background = color;
+    blk.style.boxSizing = 'border-box';
     const edge = '2px solid rgba(0,0,0,0.4)';
     blk.style.borderTop = hasTop ? 'none' : edge;
     blk.style.borderLeft = hasLeft ? 'none' : edge;
@@ -652,8 +670,16 @@ function buildSolidShape(cells, color, cellSize, gapSize){
     blk.style.borderBottomLeftRadius = (!hasBottom && !hasLeft) ? '4px' : '0';
     blk.style.borderBottomRightRadius = (!hasBottom && !hasRight) ? '4px' : '0';
     blk.style.boxShadow = hasBottom ? 'none' : '0 1px 3px rgba(0,0,0,0.4)';
-    blk.style.boxSizing = 'border-box';
     container.appendChild(blk);
+
+    // Separate, borderless fill patches bridge the gap toward internally
+    // adjacent cells, so the piece still looks fused — without the border
+    // ever leaving the cell's true footprint.
+    if(hasRight) patch(x+cellSize, y, gapSize, cellSize);
+    if(hasBottom) patch(x, y+cellSize, cellSize, gapSize);
+    if(hasRight && hasBottom && hasCellAt(cells, r+1, c+1)){
+      patch(x+cellSize, y+cellSize, gapSize, gapSize); // fills the small square where 4 cells meet
+    }
   });
   return container;
 }

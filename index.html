@@ -5,183 +5,83 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Polyomino Playground</title>
 <style>
+  :root {
+    --bg: #241f1c;
+    --panel: #332a25;
+    --panel-border: #4d3f36;
+    --board-cell: #443830;
+    --text: #e8ddd0;
+    --text-dim: #a3937f;
+    --accent: #d99a4e;
+    --accent-dim: #8a6b3e;
+    --valid-bg: #3c5638;
+    --valid-border: #6fae5a;
+    --invalid-bg: #5a3838;
+    --invalid-border: #c25a5a;
+    --danger: #a34a4a;
+    --teal: #4f8a8b;
+    --plum: #7d5a78;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-
+  html, body { height: 100%; }
   body {
     font-family: 'Segoe UI', sans-serif;
-    background: #1a1a2e;
-    color: #eee;
+    background: var(--bg);
+    color: var(--text);
     display: flex;
     flex-direction: column;
-    align-items: center;
-    min-height: 100vh;
-    padding: 20px;
-  }
-
-  h1 {
-    font-size: 1.8rem;
-    margin-bottom: 4px;
-    color: #e0aaff;
-    letter-spacing: 2px;
-    text-align: center;
-  }
-
-  .subtitle {
-    font-size: 0.85rem;
-    color: #aaa;
-    margin-bottom: 18px;
-    text-align: center;
-  }
-
-  .layout {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 18px;
-    width: 100%;
-    max-width: 1100px;
-  }
-
-  /* ── PALETTE ── */
-  .palette {
-    background: #16213e;
-    border: 1px solid #0f3460;
-    border-radius: 12px;
-    padding: 14px 16px;
-    width: 100%;
-  }
-
-  .palette-section + .palette-section {
-    margin-top: 14px;
-    padding-top: 14px;
-    border-top: 1px solid #0f3460;
-  }
-
-  .palette-section h2 {
-    font-size: 0.9rem;
-    color: #e0aaff;
-    margin-bottom: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .palette-tiles {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-
-  .tile {
-    position: relative;
-    background: #0f2040;
-    border: 1px solid #0f3460;
-    border-radius: 8px;
-    padding: 8px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    cursor: grab;
-    user-select: none;
-    touch-action: none;
-    transition: box-shadow 0.15s, transform 0.15s;
-    min-width: 64px;
-  }
-
-  .tile:hover { box-shadow: 0 0 10px #e0aaff66; transform: translateY(-2px); }
-  .tile:active { cursor: grabbing; }
-
-  .tile .tile-name {
-    font-size: 0.65rem;
-    color: #aaa;
-    text-align: center;
-    white-space: nowrap;
-  }
-
-  .tile .tile-grid {
-    display: grid;
-    gap: 2px;
-  }
-
-  .tile .tile-grid .blk {
-    border-radius: 2px;
-  }
-
-  .tile .tile-grid .blk.empty { visibility: hidden; }
-
-  .tile-btn {
-    position: absolute;
-    top: -7px;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    border: none;
-    font-size: 10px;
-    line-height: 18px;
-    text-align: center;
-    cursor: pointer;
-    color: #fff;
-    display: none;
-  }
-  .tile:hover .tile-btn { display: block; }
-  .tile-btn.edit { right: -7px; background: #1a6985; }
-  .tile-btn.del  { right: 13px; background: #8b2d2d; }
-  .tile-btn.flip { right: 33px; background: #6c5ce7; }
-  .tile-btn.flip.only { right: -7px; }
-
-  .add-tile {
-    background: #0f2040;
-    border: 1px dashed #4a5a8a;
-    border-radius: 8px;
-    padding: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 64px;
-    min-height: 64px;
-    cursor: pointer;
-    color: #8a9ad0;
-    font-size: 1.4rem;
-  }
-  .add-tile:hover { background: #14264d; color: #c0c0ff; }
-
-  /* ── GRID SIZE CONTROL ── */
-  .grid-size-row {
-    display: flex;
-    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    padding: 10px 14px;
     gap: 8px;
-    font-size: 0.8rem;
-    color: #ccc;
-    margin-bottom: 4px;
   }
-  .grid-size-row input[type=number] {
-    width: 54px;
+
+  .topbar { flex: 0 0 auto; display: flex; align-items: baseline; gap: 8px; }
+  .topbar .logo { color: var(--accent); font-size: 1.1rem; }
+  .topbar .title { font-size: 1.05rem; font-weight: 700; letter-spacing: 1px; color: var(--accent); }
+
+  .main-row {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: row;
+    gap: 14px;
+    align-items: stretch;
+    justify-content: center;
+  }
+
+  /* ── SIDEBAR / PALETTE ── */
+  .sidebar {
+    flex: 0 0 320px;
+    overflow-y: auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    padding: 12px;
+  }
+
+  .row { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; color: var(--text-dim); }
+  .row input[type=number] {
+    width: 48px;
     padding: 4px 6px;
     border-radius: 6px;
-    border: 1px solid #0f3460;
-    background: #0f2040;
-    color: #eee;
+    border: 1px solid var(--panel-border);
+    background: var(--board-cell);
+    color: var(--text);
   }
 
-  .tray-rotation-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.8rem;
-    color: #ccc;
-    margin-bottom: 14px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid #0f3460;
-  }
-  .tray-rotation-row .btn-mini { min-width: 62px; }
+  .tray-controls-row { padding-bottom: 10px; border-bottom: 1px solid var(--panel-border); }
 
   button {
-    padding: 7px 12px;
+    padding: 6px 11px;
     border: none;
     border-radius: 8px;
     cursor: pointer;
-    font-size: 0.78rem;
+    font-size: 0.76rem;
     font-weight: 600;
     color: #fff;
     transition: opacity 0.15s, transform 0.1s;
@@ -189,60 +89,165 @@
   button:hover { opacity: 0.85; transform: translateY(-1px); }
   button:active { transform: translateY(0); }
 
-  .btn-mini   { background: #1a6985; padding: 4px 10px; }
-  .btn-clear  { background: #0f3460; color: #ccc; }
-  .btn-trash  { background: #8b2d2d; }
+  .btn-mini   { background: var(--teal); padding: 5px 10px; }
+  .btn-mini.active { box-shadow: 0 0 0 2px var(--accent); }
+  .btn-clear  { background: var(--panel-border); color: var(--text); }
+  .btn-trash  { background: var(--danger); }
+  .btn-save   { background: var(--plum); }
 
-  /* ── BOARD ── */
-  .board-area {
+  .palette-section.collapsed .palette-tiles { display: none; }
+  .palette-section.collapsed .chevron { transform: rotate(-90deg); }
+
+  .section-header {
+    font-size: 0.82rem;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+    padding: 2px 0;
+  }
+  .section-header .chevron { transition: transform 0.15s; font-size: 0.7rem; }
+
+  .palette-tiles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .tile {
+    position: relative;
+    background: var(--board-cell);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 6px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
+    gap: 4px;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+    transition: box-shadow 0.15s, transform 0.15s;
+    min-width: 52px;
+  }
+  .tile:hover { box-shadow: 0 0 8px #d99a4e55; transform: translateY(-2px); }
+  .tile:active { cursor: grabbing; }
+  .tile .tile-name { font-size: 0.6rem; color: var(--text-dim); text-align: center; white-space: nowrap; }
+  .tile .tile-grid { display: grid; gap: 2px; }
+  .tile .tile-grid .blk {
+    border-radius: 2px;
+    border: 1px solid rgba(0,0,0,0.35);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.35);
+  }
+  .tile .tile-grid .blk.empty { visibility: hidden; border: none; box-shadow: none; }
+
+  .tile-btn {
+    position: absolute;
+    top: -6px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: none;
+    font-size: 9px;
+    line-height: 16px;
+    text-align: center;
+    cursor: pointer;
+    color: #fff;
+    display: none;
+  }
+  .tile:hover .tile-btn { display: block; }
+  .tile-btn.edit { right: -6px; background: var(--teal); }
+  .tile-btn.del  { right: 11px; background: var(--danger); }
+  .tile-btn.flip { right: 28px; background: var(--plum); }
+  .tile-btn.flip.only { right: -6px; }
+
+  .add-tile {
+    background: var(--board-cell);
+    border: 1px dashed var(--accent-dim);
+    border-radius: 8px;
+    padding: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 52px;
+    min-height: 52px;
+    cursor: pointer;
+    color: var(--accent-dim);
+    font-size: 1.3rem;
+  }
+  .add-tile:hover { background: #4d4038; color: var(--accent); }
+
+  /* ── BOARD ── */
+  .board-area {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    min-height: 0;
+    overflow: auto;
   }
 
-  .board-controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .board-controls { display: flex; gap: 8px; align-items: center; }
+
+  #floating-layer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    align-content: center;
+    min-height: 40px;
+    padding: 6px;
+    border: 1px dashed var(--invalid-border);
+    border-radius: 8px;
+    background: rgba(194,90,90,0.08);
+    max-width: 480px;
+    width: 100%;
+    visibility: hidden;
+  }
+  #floating-layer.has-pieces { visibility: visible; }
+
+  .floating-piece {
+    position: relative;
+    border-radius: 6px;
+    padding: 4px;
+    cursor: grab;
+  }
+  .floating-piece.selected { box-shadow: 0 0 0 2px #fff; }
+  .floating-piece .tile-grid .blk:not(.empty) { filter: grayscale(0.25) brightness(0.85); }
 
   #board-outer {
     position: relative;
-    background: #0d1730;
+    background: #1c1714;
     border-radius: 10px;
     padding: 10px;
-    box-shadow: 0 0 30px #7b2d8b55;
+    box-shadow: 0 0 24px rgba(0,0,0,0.5);
   }
 
-  #board {
-    position: relative;
-    display: grid;
-  }
+  #board { position: relative; display: grid; }
 
   .board-cell {
-    background: #16213e;
-    border: 1px solid #22335e;
+    background: var(--board-cell);
+    border: 1px solid var(--panel-border);
     border-radius: 3px;
   }
+  .board-cell.hl-valid { background: var(--valid-bg); border-color: var(--valid-border); }
+  .board-cell.hl-invalid { background: var(--invalid-bg); border-color: var(--invalid-border); }
 
-  .board-cell.hl-valid { background: #1f4d2e; border-color: #3ecf6a; }
-  .board-cell.hl-invalid { background: #4d1f1f; border-color: #cf3e3e; }
+  #pieces-layer { position: absolute; inset: 10px; pointer-events: none; }
 
-  #pieces-layer {
-    position: absolute;
-    inset: 10px;
-    pointer-events: none;
-  }
-
-  .placed-piece {
-    position: absolute;
-    display: grid;
-  }
-
+  .placed-piece { position: absolute; display: grid; }
   .placed-piece .blk {
     border-radius: 3px;
     pointer-events: auto;
     cursor: grab;
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.15);
+    border: 2px solid rgba(0,0,0,0.35);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.45);
   }
-  .placed-piece .blk.empty { visibility: hidden; pointer-events: none; }
+  .placed-piece .blk.empty { visibility: hidden; pointer-events: none; border: none; box-shadow: none; }
   .placed-piece.selected .blk:not(.empty) {
     box-shadow: inset 0 0 0 2px #fff, 0 0 8px #fff8;
   }
@@ -251,186 +256,132 @@
     position: absolute;
     display: grid;
     pointer-events: none;
-    opacity: 0.65;
+    opacity: 0.7;
     z-index: 999;
     transition: left 0.05s linear, top 0.05s linear;
   }
-  .ghost .blk { border-radius: 3px; }
-  .ghost .blk.empty { visibility: hidden; }
+  .ghost .blk { border-radius: 3px; border: 2px solid rgba(0,0,0,0.35); }
+  .ghost .blk.empty { visibility: hidden; border: none; }
   .ghost.invalid .blk:not(.empty) { filter: grayscale(0.5) brightness(0.7); }
 
   .sel-toolbar {
     position: fixed;
     display: flex;
     gap: 4px;
-    background: #0f2040;
-    border: 1px solid #0f3460;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
     border-radius: 8px;
     padding: 4px;
     z-index: 1000;
   }
-  .sel-toolbar button { padding: 5px 8px; font-size: 0.7rem; }
+  .sel-toolbar button { padding: 5px 8px; font-size: 0.68rem; }
 
-  .info-bar {
-    font-size: 0.8rem;
-    color: #aaa;
-    text-align: center;
-  }
-  .holes-count { font-size: 1rem; color: #e0aaff; font-weight: bold; }
+  .info-bar { font-size: 0.76rem; color: var(--text-dim); text-align: center; }
+  .info-bar b { color: var(--accent); }
 
-  .hint {
-    color: #888;
-    font-size: 0.72rem;
-    text-align: center;
-    max-width: 520px;
-  }
+  .hint { color: #7a6c5e; font-size: 0.68rem; text-align: center; }
 
   /* ── EDITOR MODAL ── */
   .modal-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 2000;
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center; z-index: 2000;
   }
   .modal-backdrop.hidden { display: none; }
-
   .modal {
-    background: #16213e;
-    border: 1px solid #0f3460;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
     border-radius: 12px;
     padding: 18px;
-    width: 360px;
+    width: 340px;
     max-width: 92vw;
   }
-  .modal h2 { color: #e0aaff; font-size: 1rem; margin-bottom: 12px; }
-
-  .editor-label { font-size: 0.75rem; color: #aaa; margin: 8px 0 6px; }
-
-  #editor-grid {
-    display: grid;
-    gap: 2px;
-    margin-bottom: 4px;
-  }
-  .editor-cell {
-    width: 28px;
-    height: 28px;
-    background: #0f3460;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-
+  .modal h2 { color: var(--accent); font-size: 0.95rem; margin-bottom: 12px; }
+  .editor-label { font-size: 0.72rem; color: var(--text-dim); margin: 8px 0 6px; }
+  #editor-grid { display: grid; gap: 2px; margin-bottom: 4px; }
+  .editor-cell { width: 26px; height: 26px; background: var(--board-cell); border-radius: 4px; cursor: pointer; }
   .name-input {
-    width: 100%;
-    padding: 6px 8px;
-    border-radius: 6px;
-    border: 1px solid #0f3460;
-    background: #0f2040;
-    color: #eee;
-    font-size: 0.8rem;
+    width: 100%; padding: 6px 8px; border-radius: 6px;
+    border: 1px solid var(--panel-border); background: var(--board-cell); color: var(--text); font-size: 0.78rem;
   }
-
-  .color-row {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-  .color-swatch {
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    cursor: pointer;
-    border: 2px solid transparent;
-  }
+  .color-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .color-swatch { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
   .color-swatch.active { border-color: #fff; }
-  .color-custom-input {
-    width: 30px;
-    height: 24px;
-    border: none;
-    background: none;
-    cursor: pointer;
-  }
-
-  .modal-btn-row {
-    display: flex;
-    gap: 8px;
-    margin-top: 16px;
-  }
+  .color-custom-input { width: 28px; height: 22px; border: none; background: none; cursor: pointer; }
+  .modal-btn-row { display: flex; gap: 8px; margin-top: 14px; }
   .modal-btn-row button { flex: 1; }
-  .btn-save  { background: #7b2d8b; }
-  .btn-cancel { background: #0f3460; color: #ccc; }
 </style>
 </head>
 <body>
 
-<h1>&#128313; Polyomino Playground</h1>
-<p class="subtitle">Build pieces, drag them from the tray onto the grid</p>
+<div class="topbar"><span class="logo">&#9670;</span><span class="title">Polyominoes</span></div>
 
-<div class="layout">
-
-  <div class="palette">
-    <div class="grid-size-row">
-      Grid size:
-      <input type="number" id="grid-size-input" min="4" max="16" value="8">
-      <button class="btn-mini" id="apply-grid-size">Apply</button>
-      <span style="color:#666;">(default 8&times;8)</span>
-    </div>
-
-    <div class="tray-rotation-row">
-      Tray orientation:
-      <button class="btn-mini" id="tray-rotate-btn">&#10227; 0&deg;</button>
-      <span style="color:#666;">rotates pieces as you drag them from the tray &mdash; placed pieces are unaffected</span>
-    </div>
-
-    <div class="palette-section">
-      <h2>Standard pieces</h2>
-      <div class="palette-tiles" id="standard-tiles"></div>
-    </div>
-
-    <div class="palette-section">
-      <h2>Custom polyominoes <span style="font-weight:normal;color:#888;font-size:0.72rem;">(click &#9998; to design your own)</span></h2>
-      <div class="palette-tiles" id="custom-tiles"></div>
-    </div>
-  </div>
+<div class="main-row">
 
   <div class="board-area">
     <div class="board-controls">
-      <button class="btn-trash" id="clear-board-btn">&#128465; Clear Board</button>
+      <button class="btn-trash" id="clear-board-btn">&#128465; Clear</button>
     </div>
+    <div id="floating-layer"></div>
     <div id="board-outer">
       <div id="board"></div>
       <div id="pieces-layer"></div>
     </div>
-    <div class="info-bar">
-      Uncovered cells: <span class="holes-count" id="holes-count">64</span> / <span id="total-count">64</span>
+    <div class="info-bar">Open: <b id="holes-count">64</b>/<span id="total-count">64</span></div>
+    <p class="hint">Drag to place &bull; click to select &bull; arrows/R/T/D/Del/Z</p>
+  </div>
+
+  <div class="sidebar">
+    <div class="row">
+      Grid
+      <input type="number" id="grid-size-input" min="4" max="16" value="8">
+      <button class="btn-mini" id="apply-grid-size">Apply</button>
     </div>
-    <p class="hint">
-      Drag a tile from the tray onto the grid to place it. Drag a placed piece to move it.
-      Click a placed piece to select it, then Rotate/Flip/Delete (or press R / F / Delete).
-      Right-click a piece to remove it instantly.
-    </p>
+
+    <div class="row tray-controls-row">
+      Tray
+      <button class="btn-mini" id="tray-rotate-btn" title="Rotate pieces as you drag them from the tray">&#10227; 0&deg;</button>
+      <button class="btn-mini" id="tray-flip-btn" title="Flip pieces as you drag them from the tray">&#8646;</button>
+    </div>
+
+    <div class="palette-section" id="section-standard">
+      <div class="section-header" data-target="section-standard">
+        <span>Standard</span><span class="chevron">&#9662;</span>
+      </div>
+      <div class="palette-tiles" id="standard-tiles"></div>
+    </div>
+
+    <div class="palette-section collapsed" id="section-pentomino">
+      <div class="section-header" data-target="section-pentomino">
+        <span>Pentominoes</span><span class="chevron">&#9662;</span>
+      </div>
+      <div class="palette-tiles" id="pentomino-tiles"></div>
+    </div>
+
+    <div class="palette-section" id="section-custom">
+      <div class="section-header" data-target="section-custom">
+        <span>Custom</span><span class="chevron">&#9662;</span>
+      </div>
+      <div class="palette-tiles" id="custom-tiles"></div>
+    </div>
   </div>
 
 </div>
 
 <div class="modal-backdrop hidden" id="editor-modal">
   <div class="modal">
-    <h2 id="editor-title">Design your polyomino</h2>
-    <input class="name-input" id="editor-name" maxlength="24" placeholder="Piece name">
-    <div class="editor-label">Click / drag to toggle cells</div>
+    <h2>Custom piece</h2>
+    <input class="name-input" id="editor-name" maxlength="24" placeholder="Name">
+    <div class="editor-label">Draw cells</div>
     <div id="editor-grid"></div>
     <div class="modal-btn-row" style="margin-top:8px;">
-      <button class="btn-mini" id="editor-rotate">&#8635; Rotate</button>
-      <button class="btn-mini" id="editor-flip">&#8646; Flip</button>
-      <button class="btn-clear" id="editor-clear">&#10005; Clear</button>
+      <button class="btn-mini" id="editor-rotate">&#8635;</button>
+      <button class="btn-mini" id="editor-flip">&#8646;</button>
+      <button class="btn-clear" id="editor-clear">&#10005;</button>
     </div>
     <div class="editor-label">Color</div>
     <div class="color-row" id="editor-colors"></div>
     <div class="modal-btn-row">
-      <button class="btn-cancel" id="editor-cancel">Cancel</button>
+      <button class="btn-clear" id="editor-cancel">Cancel</button>
       <button class="btn-save" id="editor-save">Save</button>
     </div>
   </div>
@@ -438,19 +389,28 @@
 
 <script>
 /* ═══════════════════════════════════════════════
-   CONSTANTS
+   CONSTANTS & GEOMETRY HELPERS
 ═══════════════════════════════════════════════ */
-const CELL = 52;
-const GAP  = 3;
+let CELL = 46;           // recomputed by computeCellSize() so any grid size fits on screen
+const GAP = 3;
+const MAX_BOARD_PX = 460;
+const MIN_CELL = 20, MAX_CELL = 52;
 const EDITOR_SIZE = 8;
-const CELL_E = 28;
-const MUTED_PINK = '#c98a9a';
+const CELL_E = 26;
+const MUTED_PINK = '#c98a8f';
 
 const PALETTE_COLORS = [
-  '#c98a9a', '#e63946', '#f3a712', '#2a9d8f', '#00b4d8',
-  '#ffd60a', '#9d4edd', '#06d6a0', '#3a86ff', '#fb8500',
-  '#ef476f', '#118ab2', '#83c5be', '#f4978e'
+  '#c98a8f', '#c1666b', '#d9a441', '#6b8f71', '#4f8a8b',
+  '#8c6a9c', '#7a9471', '#a34a4a', '#4a6b8a', '#c67d3f',
+  '#9c7350', '#5c8a72', '#b8865a', '#6a5a8c', '#a6763f',
+  '#5a7d8c', '#8f5c4a', '#7d8c4a', '#a44e6b', '#4a8c7a',
+  '#8c6a4a', '#6b4a6b'
 ];
+
+function computeCellSize(){
+  const raw = Math.floor((MAX_BOARD_PX - (gridSize-1)*GAP) / gridSize);
+  return Math.max(MIN_CELL, Math.min(MAX_CELL, raw));
+}
 
 function normalize(cells){
   const minR = Math.min(...cells.map(c=>c[0]));
@@ -470,51 +430,65 @@ function flipCells(cells){
 }
 
 /* ═══════════════════════════════════════════════
-   STANDARD PIECES
+   FIXED PIECE SETS
 ═══════════════════════════════════════════════ */
 const STANDARD_PIECES = [
-  { name:'Monomino', color:'#e63946', cells:[[0,0]] },
-  { name:'Domino',   color:'#f3a712', cells:[[0,0],[0,1]] },
-  { name:'Tromino I',color:'#2a9d8f', cells:[[0,0],[0,1],[0,2]] },
-  { name:'Tromino L',color:'#e76f51', cells:[[0,0],[1,0],[1,1]] },
-  { name:'Tetromino I', color:'#00b4d8', cells:[[0,0],[0,1],[0,2],[0,3]] },
-  { name:'Tetromino O', color:'#ffd60a', cells:[[0,0],[0,1],[1,0],[1,1]] },
-  { name:'Tetromino T', color:'#9d4edd', cells:[[0,0],[0,1],[0,2],[1,1]] },
-  { name:'Tetromino S', color:'#43aa8b', cells:[[0,1],[0,2],[1,0],[1,1]] },
-  { name:'Tetromino Z', color:'#d90429', cells:[[0,0],[0,1],[1,1],[1,2]] },
-  { name:'Tetromino J', color:'#3a86ff', cells:[[0,0],[1,0],[1,1],[1,2]] },
-  { name:'Tetromino L', color:'#fb8500', cells:[[0,2],[1,0],[1,1],[1,2]] },
+  { name:'Mono',   color:'#c1666b', cells:[[0,0]] },
+  { name:'Domino', color:'#d9a441', cells:[[0,0],[0,1]] },
+  { name:'Tri I',  color:'#6b8f71', cells:[[0,0],[0,1],[0,2]] },
+  { name:'Tri L',  color:'#c67d3f', cells:[[0,0],[1,0],[1,1]] },
+  { name:'I', color:'#4f8a8b', cells:[[0,0],[0,1],[0,2],[0,3]] },
+  { name:'O', color:'#d9a441', cells:[[0,0],[0,1],[1,0],[1,1]] },
+  { name:'T', color:'#8c6a9c', cells:[[0,0],[0,1],[0,2],[1,1]] },
+  { name:'S', color:'#7a9471', cells:[[0,1],[0,2],[1,0],[1,1]] },
+  { name:'Z', color:'#a34a4a', cells:[[0,0],[0,1],[1,1],[1,2]] },
+  { name:'J', color:'#4a6b8a', cells:[[0,0],[1,0],[1,1],[1,2]] },
+  { name:'L', color:'#c67d3f', cells:[[0,2],[1,0],[1,1],[1,2]] },
 ];
 
-/* restore any saved flip orientation for standard pieces */
-(function applyStandardOverrides(){
+const PENTOMINO_PIECES = [
+  { name:'F', color:'#9c7350', cells:[[0,1],[0,2],[1,0],[1,1],[2,1]] },
+  { name:'I', color:'#5c8a72', cells:[[0,0],[0,1],[0,2],[0,3],[0,4]] },
+  { name:'L', color:'#b8865a', cells:[[0,0],[1,0],[2,0],[3,0],[3,1]] },
+  { name:'N', color:'#6a5a8c', cells:[[0,1],[1,1],[2,0],[2,1],[3,0]] },
+  { name:'P', color:'#a6763f', cells:[[0,0],[0,1],[1,0],[1,1],[2,0]] },
+  { name:'T', color:'#5a7d8c', cells:[[0,0],[0,1],[0,2],[1,1],[2,1]] },
+  { name:'U', color:'#8f5c4a', cells:[[0,0],[0,2],[1,0],[1,1],[1,2]] },
+  { name:'V', color:'#7d8c4a', cells:[[0,0],[1,0],[2,0],[2,1],[2,2]] },
+  { name:'W', color:'#a44e6b', cells:[[0,0],[1,0],[1,1],[2,1],[2,2]] },
+  { name:'X', color:'#4a8c7a', cells:[[0,1],[1,0],[1,1],[1,2],[2,1]] },
+  { name:'Y', color:'#8c6a4a', cells:[[0,1],[1,0],[1,1],[2,1],[3,1]] },
+  { name:'Z', color:'#6b4a6b', cells:[[0,0],[0,1],[1,1],[2,1],[2,2]] },
+];
+
+function applyOverrides(key, piecesArray){
   try {
-    const raw = localStorage.getItem('poly_standardOverrides');
+    const raw = localStorage.getItem('poly_overrides_'+key);
     if(!raw) return;
     const overrides = JSON.parse(raw);
-    STANDARD_PIECES.forEach(def=>{
-      if(overrides[def.name]) def.cells = overrides[def.name];
-    });
+    piecesArray.forEach(def=>{ if(overrides[def.name]) def.cells = overrides[def.name]; });
   } catch(e){}
-})();
-function saveStandardOverrides(){
-  const overrides = {};
-  STANDARD_PIECES.forEach(def=>{ overrides[def.name] = def.cells; });
-  localStorage.setItem('poly_standardOverrides', JSON.stringify(overrides));
 }
+function saveOverrides(key, piecesArray){
+  const overrides = {};
+  piecesArray.forEach(def=>{ overrides[def.name] = def.cells; });
+  localStorage.setItem('poly_overrides_'+key, JSON.stringify(overrides));
+}
+applyOverrides('standard', STANDARD_PIECES);
+applyOverrides('pentomino', PENTOMINO_PIECES);
 
 /* ═══════════════════════════════════════════════
    STATE
 ═══════════════════════════════════════════════ */
 let gridSize = parseInt(localStorage.getItem('poly_gridSize')) || 8;
 
-/* Tray orientation dial: rotates pieces as they're dragged from the tray.
+/* Tray transform: rotates/flips pieces as they're dragged from the tray.
    Only affects future drags-from-tray — never retroactively touches pieces
-   already placed on the board (those keep whatever rotate/flip toolbar
-   is used per-piece once selected). */
+   already placed on the board. */
 let trayRotation = 0; // 0, 90, 180, 270
-function applyTrayRotation(cells){
-  let result = cells;
+let trayFlipped = false;
+function applyTrayTransform(cells){
+  let result = trayFlipped ? flipCells(cells) : cells;
   for(let i=0; i<trayRotation/90; i++) result = rotateCells(result);
   return result;
 }
@@ -547,18 +521,37 @@ let customIdCounter = customPieces.reduce((m,p)=>{
   return Math.max(m,n);
 },0) + 1;
 
-let placedPieces = []; // {id, cells, color, name, anchorRow, anchorCol}
+let placedPieces = [];   // {id, cells, color, name, anchorRow, anchorCol}
+let floatingPieces = []; // {id, cells, color, name} — unplaced, hovering above the board
 let placedIdCounter = 1;
 let selectedId = null;
+let selectedKind = null; // 'placed' | 'floating'
+
+let undoStack = [];
+const UNDO_LIMIT = 50;
+function pushUndo(){
+  undoStack.push(JSON.stringify({placedPieces, floatingPieces, selectedId, selectedKind}));
+  if(undoStack.length > UNDO_LIMIT) undoStack.shift();
+}
+function undo(){
+  if(!undoStack.length) return;
+  const snap = JSON.parse(undoStack.pop());
+  placedPieces = snap.placedPieces;
+  floatingPieces = snap.floatingPieces;
+  selectedId = snap.selectedId;
+  selectedKind = snap.selectedKind;
+  renderAll();
+}
 
 const boardEl = document.getElementById('board');
 const piecesLayerEl = document.getElementById('pieces-layer');
-const boardOuterEl = document.getElementById('board-outer');
+const floatingLayerEl = document.getElementById('floating-layer');
 
 /* ═══════════════════════════════════════════════
    BOARD SETUP
 ═══════════════════════════════════════════════ */
 function setupBoard(){
+  CELL = computeCellSize();
   boardEl.style.gridTemplateColumns = `repeat(${gridSize}, ${CELL}px)`;
   boardEl.style.gridTemplateRows = `repeat(${gridSize}, ${CELL}px)`;
   boardEl.style.gap = GAP + 'px';
@@ -573,7 +566,6 @@ function setupBoard(){
     }
   }
   document.getElementById('total-count').textContent = gridSize*gridSize;
-  updateHolesCount();
 }
 
 function occupied(excludeId){
@@ -595,27 +587,44 @@ function isValidPlacement(cells, anchorRow, anchorCol, excludeId){
   return true;
 }
 
+function findOpenAnchor(cells, prefRow, prefCol){
+  const {rows, cols} = bounds(cells);
+  if(rows>gridSize || cols>gridSize) return null;
+  let best = null, bestDist = Infinity;
+  for(let r=0; r<=gridSize-rows; r++){
+    for(let c=0; c<=gridSize-cols; c++){
+      if(isValidPlacement(cells, r, c, null)){
+        const dist = Math.abs(r-prefRow) + Math.abs(c-prefCol);
+        if(dist < bestDist){ bestDist = dist; best = {row:r, col:c}; }
+      }
+    }
+  }
+  return best;
+}
+
 function updateHolesCount(){
   const covered = new Set();
   placedPieces.forEach(p=>p.cells.forEach(([r,c])=>covered.add((p.anchorRow+r)+','+(p.anchorCol+c))));
   document.getElementById('holes-count').textContent = gridSize*gridSize - covered.size;
 }
 
-function pxPos(index){ return index*(CELL+GAP); } // same pitch for x and y since cells are square
+function pxPos(index){ return index*(CELL+GAP); }
 
+/* ═══════════════════════════════════════════════
+   RENDERING
+═══════════════════════════════════════════════ */
 function renderPlacedPieces(){
   piecesLayerEl.innerHTML = '';
   placedPieces.forEach(p=>{
     const {rows, cols} = bounds(p.cells);
     const wrap = document.createElement('div');
-    wrap.className = 'placed-piece' + (p.id===selectedId ? ' selected' : '');
+    wrap.className = 'placed-piece' + (p.id===selectedId && selectedKind==='placed' ? ' selected' : '');
     wrap.style.left = pxPos(p.anchorCol) + 'px';
     wrap.style.top = pxPos(p.anchorRow) + 'px';
     wrap.style.gridTemplateColumns = `repeat(${cols}, ${CELL}px)`;
     wrap.style.gridTemplateRows = `repeat(${rows}, ${CELL}px)`;
     wrap.style.gap = GAP + 'px';
     wrap.dataset.id = p.id;
-
     for(let r=0;r<rows;r++){
       for(let c=0;c<cols;c++){
         const has = p.cells.some(([cr,cc])=>cr===r&&cc===c);
@@ -632,6 +641,24 @@ function renderPlacedPieces(){
     piecesLayerEl.appendChild(wrap);
   });
   updateHolesCount();
+}
+
+function renderFloatingPieces(){
+  floatingLayerEl.innerHTML = '';
+  floatingLayerEl.classList.toggle('has-pieces', floatingPieces.length > 0);
+  floatingPieces.forEach(p=>{
+    const tile = document.createElement('div');
+    tile.className = 'floating-piece' + (p.id===selectedId && selectedKind==='floating' ? ' selected' : '');
+    tile.dataset.id = p.id;
+    tile.appendChild(buildTilePreview(p.cells, p.color, 22));
+    tile.addEventListener('pointerdown', e=>startDragFromFloating(e, p));
+    floatingLayerEl.appendChild(tile);
+  });
+}
+
+function renderAll(){
+  renderPlacedPieces();
+  renderFloatingPieces();
   updateSelToolbar();
 }
 
@@ -661,14 +688,14 @@ function buildTilePreview(cells, color, cellPx){
 /* ═══════════════════════════════════════════════
    PALETTE RENDERING
 ═══════════════════════════════════════════════ */
-function renderStandardTiles(){
-  const container = document.getElementById('standard-tiles');
+function renderFixedTiles(containerId, piecesArray, overrideKey){
+  const container = document.getElementById(containerId);
   container.innerHTML = '';
-  STANDARD_PIECES.forEach(def=>{
-    const effectiveCells = applyTrayRotation(def.cells);
+  piecesArray.forEach(def=>{
+    const effectiveCells = applyTrayTransform(def.cells);
     const tile = document.createElement('div');
     tile.className = 'tile';
-    tile.appendChild(buildTilePreview(effectiveCells, def.color, 14));
+    tile.appendChild(buildTilePreview(effectiveCells, def.color, 13));
     const label = document.createElement('div');
     label.className = 'tile-name';
     label.textContent = def.name;
@@ -677,12 +704,12 @@ function renderStandardTiles(){
     const flipBtn = document.createElement('button');
     flipBtn.className = 'tile-btn flip only';
     flipBtn.textContent = '⇆';
-    flipBtn.title = 'Flip orientation';
+    flipBtn.title = 'Flip';
     flipBtn.onclick = (e)=>{
       e.stopPropagation();
       def.cells = flipCells(def.cells);
-      saveStandardOverrides();
-      renderStandardTiles();
+      saveOverrides(overrideKey, piecesArray);
+      renderFixedTiles(containerId, piecesArray, overrideKey);
     };
     tile.appendChild(flipBtn);
 
@@ -693,15 +720,17 @@ function renderStandardTiles(){
     container.appendChild(tile);
   });
 }
+function renderStandardTiles(){ renderFixedTiles('standard-tiles', STANDARD_PIECES, 'standard'); }
+function renderPentominoTiles(){ renderFixedTiles('pentomino-tiles', PENTOMINO_PIECES, 'pentomino'); }
 
 function renderCustomTiles(){
   const container = document.getElementById('custom-tiles');
   container.innerHTML = '';
   customPieces.forEach(def=>{
-    const effectiveCells = applyTrayRotation(def.cells);
+    const effectiveCells = applyTrayTransform(def.cells);
     const tile = document.createElement('div');
     tile.className = 'tile';
-    tile.appendChild(buildTilePreview(effectiveCells, def.color, 14));
+    tile.appendChild(buildTilePreview(effectiveCells, def.color, 13));
     const label = document.createElement('div');
     label.className = 'tile-name';
     label.textContent = def.name;
@@ -710,14 +739,14 @@ function renderCustomTiles(){
     const editBtn = document.createElement('button');
     editBtn.className = 'tile-btn edit';
     editBtn.textContent = '✎';
-    editBtn.title = 'Edit shape / color';
+    editBtn.title = 'Edit';
     editBtn.onclick = (e)=>{ e.stopPropagation(); openEditor(def.id); };
     tile.appendChild(editBtn);
 
     const flipBtn = document.createElement('button');
     flipBtn.className = 'tile-btn flip';
     flipBtn.textContent = '⇆';
-    flipBtn.title = 'Flip orientation';
+    flipBtn.title = 'Flip';
     flipBtn.onclick = (e)=>{
       e.stopPropagation();
       def.cells = flipCells(def.cells);
@@ -731,7 +760,7 @@ function renderCustomTiles(){
       const delBtn = document.createElement('button');
       delBtn.className = 'tile-btn del';
       delBtn.textContent = '✕';
-      delBtn.title = 'Remove this custom slot';
+      delBtn.title = 'Remove';
       delBtn.onclick = (e)=>{
         e.stopPropagation();
         customPieces = customPieces.filter(p=>p.id!==def.id);
@@ -751,7 +780,7 @@ function renderCustomTiles(){
   const addTile = document.createElement('div');
   addTile.className = 'add-tile';
   addTile.textContent = '+';
-  addTile.title = 'Add a new custom polyomino';
+  addTile.title = 'New custom piece';
   addTile.onclick = ()=>{
     const id = 'custom-' + (customIdCounter++);
     const piece = defaultCustomPiece(id);
@@ -764,9 +793,29 @@ function renderCustomTiles(){
 }
 
 /* ═══════════════════════════════════════════════
-   DRAG: FROM PALETTE (creates a new placed piece)
+   COLLAPSIBLE SECTIONS
 ═══════════════════════════════════════════════ */
-let drag = null; // {mode:'new'|'move', cells, color, name, grabDR, grabDC, ghostEl, sourceId, origAnchorRow, origAnchorCol, moved}
+document.querySelectorAll('.section-header').forEach(h=>{
+  h.addEventListener('click', ()=>{
+    const section = document.getElementById(h.dataset.target);
+    section.classList.toggle('collapsed');
+    localStorage.setItem('poly_collapsed_'+h.dataset.target, section.classList.contains('collapsed'));
+  });
+});
+(function restoreCollapseState(){
+  ['section-standard','section-pentomino','section-custom'].forEach(id=>{
+    const stored = localStorage.getItem('poly_collapsed_'+id);
+    if(stored===null) return;
+    document.getElementById(id).classList.toggle('collapsed', stored==='true');
+  });
+})();
+
+/* ═══════════════════════════════════════════════
+   DRAG (tray → board, board → board, floating → board)
+═══════════════════════════════════════════════ */
+let drag = null;
+/* drag = {mode:'new'|'move'|'float', cells, color, name, grabDR, grabDC, ghostEl,
+           sourceId, startX, startY, moved} */
 
 function makeGhost(cells, color){
   const {rows, cols} = bounds(cells);
@@ -786,9 +835,6 @@ function makeGhost(cells, color){
       ghost.appendChild(blk);
     }
   }
-  // Ghost lives inside the same absolutely-positioned layer as placed pieces,
-  // so pxPos(anchorRow/Col) places it in the identical coordinate space —
-  // it always shows exactly the cells it will occupy if dropped right now.
   piecesLayerEl.appendChild(ghost);
   return ghost;
 }
@@ -799,10 +845,7 @@ function startDragFromTile(e, cells, color, name){
   const grabDR = Math.floor((rows-1)/2);
   const grabDC = Math.floor((cols-1)/2);
   const ghostEl = makeGhost(cells, color);
-  drag = {
-    mode: 'new', cells: cells.map(c=>c.slice()), color, name,
-    grabDR, grabDC, ghostEl, moved: true
-  };
+  drag = { mode:'new', cells: cells.map(c=>c.slice()), color, name, grabDR, grabDC, ghostEl, moved:true };
   updateDrag(e.clientX, e.clientY);
   window.addEventListener('pointermove', onDragMove);
   window.addEventListener('pointerup', onDragEnd);
@@ -811,22 +854,38 @@ function startDragFromTile(e, cells, color, name){
 function startDragFromPlaced(e, piece){
   e.preventDefault();
   e.stopPropagation();
-  selectPiece(piece.id);
+  selectPiece(piece.id, 'placed');
   const blk = e.target.closest('.blk');
   const dr = blk ? parseInt(blk.dataset.dr) : 0;
   const dc = blk ? parseInt(blk.dataset.dc) : 0;
   const ghostEl = makeGhost(piece.cells, piece.color);
   drag = {
-    mode: 'move', cells: piece.cells.map(c=>c.slice()), color: piece.color, name: piece.name,
-    grabDR: dr, grabDC: dc, ghostEl,
-    sourceId: piece.id,
-    origAnchorRow: piece.anchorRow, origAnchorCol: piece.anchorCol,
+    mode:'move', cells: piece.cells.map(c=>c.slice()), color: piece.color, name: piece.name,
+    grabDR: dr, grabDC: dc, ghostEl, sourceId: piece.id,
     startX: e.clientX, startY: e.clientY, moved: false
   };
   updateDrag(e.clientX, e.clientY);
-  // hide the real piece while dragging its ghost
   const wrapEl = piecesLayerEl.querySelector(`[data-id="${piece.id}"]`);
   if(wrapEl) wrapEl.style.visibility = 'hidden';
+  window.addEventListener('pointermove', onDragMove);
+  window.addEventListener('pointerup', onDragEnd);
+}
+
+function startDragFromFloating(e, piece){
+  e.preventDefault();
+  selectPiece(piece.id, 'floating');
+  const {rows, cols} = bounds(piece.cells);
+  const grabDR = Math.floor((rows-1)/2);
+  const grabDC = Math.floor((cols-1)/2);
+  const ghostEl = makeGhost(piece.cells, piece.color);
+  drag = {
+    mode:'float', cells: piece.cells.map(c=>c.slice()), color: piece.color, name: piece.name,
+    grabDR, grabDC, ghostEl, sourceId: piece.id,
+    startX: e.clientX, startY: e.clientY, moved: false
+  };
+  updateDrag(e.clientX, e.clientY);
+  const tileEl = floatingLayerEl.querySelector(`[data-id="${piece.id}"]`);
+  if(tileEl) tileEl.style.visibility = 'hidden';
   window.addEventListener('pointermove', onDragMove);
   window.addEventListener('pointerup', onDragEnd);
 }
@@ -837,11 +896,14 @@ function clearHighlights(){
   });
 }
 
+function isOutsideBoard(clientX, clientY){
+  const rect = boardEl.getBoundingClientRect();
+  return clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom;
+}
+
 /* Single source of truth for "where would this drag land right now". Used by
-   both pointermove (to draw the ghost/highlights) and pointerup (to commit
-   the placement), so the ghost you see and the cell you get are always the
-   exact same computation — no separate "smooth follow" vs "snapped drop"
-   paths that can disagree. */
+   both pointermove (ghost/highlights) and pointerup (commit), so the ghost
+   you see and the cell you get always agree. */
 function updateDrag(clientX, clientY){
   const rect = boardEl.getBoundingClientRect();
   const relX = clientX - rect.left;
@@ -850,7 +912,8 @@ function updateDrag(clientX, clientY){
   const pointerRow = Math.floor(relY / (CELL+GAP));
   const anchorRow = pointerRow - drag.grabDR;
   const anchorCol = pointerCol - drag.grabDC;
-  const valid = isValidPlacement(drag.cells, anchorRow, anchorCol, drag.sourceId);
+  const excludeId = drag.mode==='move' ? drag.sourceId : null;
+  const valid = isValidPlacement(drag.cells, anchorRow, anchorCol, excludeId);
 
   drag.ghostEl.style.left = pxPos(anchorCol) + 'px';
   drag.ghostEl.style.top  = pxPos(anchorRow) + 'px';
@@ -868,7 +931,7 @@ function updateDrag(clientX, clientY){
 
 function onDragMove(e){
   if(!drag) return;
-  if(drag.mode==='move'){
+  if(drag.mode==='move' || drag.mode==='float'){
     if(Math.abs(e.clientX-drag.startX)>3 || Math.abs(e.clientY-drag.startY)>3) drag.moved = true;
   }
   updateDrag(e.clientX, e.clientY);
@@ -879,116 +942,195 @@ function onDragEnd(e){
   window.removeEventListener('pointermove', onDragMove);
   window.removeEventListener('pointerup', onDragEnd);
 
-  if(drag.mode==='move'){
+  if(drag.mode==='move' || drag.mode==='float'){
     if(Math.abs(e.clientX-drag.startX)>3 || Math.abs(e.clientY-drag.startY)>3) drag.moved = true;
   }
-  // Recompute fresh from the actual pointerup coordinates through the same
-  // updateDrag() the ghost was just drawn with — guarantees the drop always
-  // matches the last thing the user saw, even if pointerup fires without a
-  // preceding pointermove at this exact spot.
   const { anchorRow, anchorCol, valid } = updateDrag(e.clientX, e.clientY);
   clearHighlights();
   drag.ghostEl.remove();
 
   if(drag.mode==='new'){
     if(valid){
-      placedPieces.push({
-        id: 'p'+(placedIdCounter++),
-        cells: drag.cells, color: drag.color, name: drag.name,
-        anchorRow, anchorCol
-      });
+      pushUndo();
+      const id = 'p'+(placedIdCounter++);
+      placedPieces.push({ id, cells: drag.cells, color: drag.color, name: drag.name, anchorRow, anchorCol });
+      selectedId = id; selectedKind = 'placed';
     }
   } else if(drag.mode==='move'){
     const piece = placedPieces.find(p=>p.id===drag.sourceId);
     if(piece){
-      if(drag.moved && valid){
+      if(drag.moved && isOutsideBoard(e.clientX, e.clientY)){
+        pushUndo();
+        placedPieces = placedPieces.filter(p=>p.id!==piece.id);
+        selectedId = null; selectedKind = null;
+      } else if(drag.moved && valid){
+        pushUndo();
         piece.anchorRow = anchorRow;
         piece.anchorCol = anchorCol;
       }
-      const wrapEl = piecesLayerEl.querySelector(`[data-id="${piece.id}"]`);
-      if(wrapEl) wrapEl.style.visibility = '';
+    }
+  } else if(drag.mode==='float'){
+    if(drag.moved && valid){
+      pushUndo();
+      floatingPieces = floatingPieces.filter(p=>p.id!==drag.sourceId);
+      placedPieces.push({ id: drag.sourceId, cells: drag.cells, color: drag.color, name: drag.name, anchorRow, anchorCol });
+      selectedId = drag.sourceId; selectedKind = 'placed';
     }
   }
   drag = null;
-  renderPlacedPieces();
+  renderAll();
 }
 
 /* ═══════════════════════════════════════════════
-   SELECTION / ROTATE / FLIP / DELETE
+   SELECTION / ROTATE / FLIP / DUPLICATE / DELETE
 ═══════════════════════════════════════════════ */
-function selectPiece(id){
+function selectPiece(id, kind){
   selectedId = id;
-  renderPlacedPieces();
+  selectedKind = kind;
+  renderAll();
 }
 
 function deselect(){
   selectedId = null;
-  renderPlacedPieces();
+  selectedKind = null;
+  renderAll();
 }
 
 function deleteSelected(){
   if(!selectedId) return;
-  placedPieces = placedPieces.filter(p=>p.id!==selectedId);
-  selectedId = null;
-  renderPlacedPieces();
+  pushUndo();
+  if(selectedKind==='placed') placedPieces = placedPieces.filter(p=>p.id!==selectedId);
+  else if(selectedKind==='floating') floatingPieces = floatingPieces.filter(p=>p.id!==selectedId);
+  selectedId = null; selectedKind = null;
+  renderAll();
 }
 
 function transformSelected(fn){
-  const piece = placedPieces.find(p=>p.id===selectedId);
-  if(!piece) return;
-  const newCells = fn(piece.cells);
-  if(isValidPlacement(newCells, piece.anchorRow, piece.anchorCol, piece.id)){
-    piece.cells = newCells;
-    renderPlacedPieces();
+  if(!selectedId) return;
+  if(selectedKind==='placed'){
+    const piece = placedPieces.find(p=>p.id===selectedId);
+    if(!piece) return;
+    const newCells = fn(piece.cells);
+    if(isValidPlacement(newCells, piece.anchorRow, piece.anchorCol, piece.id)){
+      pushUndo();
+      piece.cells = newCells;
+      renderAll();
+    } else {
+      // Doesn't fit here — pop it off the board into the floating staging
+      // area (still selected) so it can be freely rotated/flipped with no
+      // fit constraint, then dragged back in once ready.
+      pushUndo();
+      placedPieces = placedPieces.filter(p=>p.id!==piece.id);
+      floatingPieces.push({ id: piece.id, cells: newCells, color: piece.color, name: piece.name });
+      selectedKind = 'floating';
+      renderAll();
+    }
+  } else if(selectedKind==='floating'){
+    const piece = floatingPieces.find(p=>p.id===selectedId);
+    if(!piece) return;
+    pushUndo();
+    piece.cells = fn(piece.cells);
+    renderAll();
   }
+}
+
+function duplicateSelected(){
+  if(!selectedId) return;
+  const source = selectedKind==='placed'
+    ? placedPieces.find(p=>p.id===selectedId)
+    : floatingPieces.find(p=>p.id===selectedId);
+  if(!source) return;
+  pushUndo();
+  const {rows, cols} = bounds(source.cells);
+  const prefRow = selectedKind==='placed' ? source.anchorRow : Math.floor((gridSize-rows)/2);
+  const prefCol = selectedKind==='placed' ? source.anchorCol : Math.floor((gridSize-cols)/2);
+  const anchor = findOpenAnchor(source.cells, prefRow, prefCol);
+  const newId = 'p'+(placedIdCounter++);
+  if(anchor){
+    placedPieces.push({ id:newId, cells: source.cells.map(c=>c.slice()), color: source.color, name: source.name, anchorRow: anchor.row, anchorCol: anchor.col });
+    selectedId = newId; selectedKind = 'placed';
+  } else {
+    floatingPieces.push({ id:newId, cells: source.cells.map(c=>c.slice()), color: source.color, name: source.name });
+    selectedId = newId; selectedKind = 'floating';
+  }
+  renderAll();
 }
 
 function updateSelToolbar(){
   let bar = document.getElementById('sel-toolbar');
   if(bar) bar.remove();
   if(!selectedId) return;
-  const piece = placedPieces.find(p=>p.id===selectedId);
-  if(!piece) return;
-  const wrapEl = piecesLayerEl.querySelector(`[data-id="${piece.id}"]`);
-  if(!wrapEl) return;
+
+  let piece, wrapEl;
+  if(selectedKind==='placed'){
+    piece = placedPieces.find(p=>p.id===selectedId);
+    wrapEl = piece && piecesLayerEl.querySelector(`[data-id="${piece.id}"]`);
+  } else if(selectedKind==='floating'){
+    piece = floatingPieces.find(p=>p.id===selectedId);
+    wrapEl = piece && floatingLayerEl.querySelector(`[data-id="${piece.id}"]`);
+  }
+  if(!piece || !wrapEl) return;
   const rect = wrapEl.getBoundingClientRect();
 
   bar = document.createElement('div');
   bar.className = 'sel-toolbar';
   bar.id = 'sel-toolbar';
   bar.style.left = rect.left + 'px';
-  bar.style.top = (rect.top - 36) + 'px';
+  // Prefer placing the toolbar above the piece, but flip below it when
+  // there isn't enough headroom (e.g. a floating piece sitting right under
+  // the board controls) so it never overlaps other UI.
+  const controlsRect = document.querySelector('.board-controls').getBoundingClientRect();
+  const wouldOverlapControls = (rect.top - 34) < controlsRect.bottom + 4;
+  bar.style.top = (wouldOverlapControls ? rect.bottom + 6 : rect.top - 34) + 'px';
 
-  const rotateBtn = document.createElement('button');
-  rotateBtn.className = 'btn-mini';
-  rotateBtn.textContent = '↻ Rotate';
-  rotateBtn.onclick = ()=>transformSelected(rotateCells);
-
-  const flipBtn = document.createElement('button');
-  flipBtn.className = 'btn-mini';
-  flipBtn.textContent = '⇆ Flip';
-  flipBtn.onclick = ()=>transformSelected(flipCells);
-
-  const delBtn = document.createElement('button');
-  delBtn.className = 'btn-trash';
-  delBtn.textContent = '✕ Delete';
-  delBtn.onclick = deleteSelected;
-
-  bar.appendChild(rotateBtn);
-  bar.appendChild(flipBtn);
-  bar.appendChild(delBtn);
+  const mk = (label, title, fn, cls)=>{
+    const b = document.createElement('button');
+    b.className = cls || 'btn-mini';
+    b.textContent = label;
+    b.title = title;
+    b.onclick = fn;
+    return b;
+  };
+  bar.appendChild(mk('↻','Rotate (R)', ()=>transformSelected(rotateCells)));
+  bar.appendChild(mk('⇆','Flip (T)', ()=>transformSelected(flipCells)));
+  bar.appendChild(mk('⧉','Duplicate (D)', duplicateSelected));
+  bar.appendChild(mk('✕','Delete (Del)', deleteSelected, 'btn-trash'));
   document.body.appendChild(bar);
 }
 
+/* ═══════════════════════════════════════════════
+   KEYBOARD CONTROLS
+═══════════════════════════════════════════════ */
+const ARROW_DIRS = { ArrowUp:[-1,0], ArrowDown:[1,0], ArrowLeft:[0,-1], ArrowRight:[0,1] };
+
 document.addEventListener('keydown', e=>{
-  if(!selectedId) return;
   if(e.target.tagName==='INPUT') return;
-  if(e.key==='r' || e.key==='R') transformSelected(rotateCells);
-  else if(e.key==='f' || e.key==='F') transformSelected(flipCells);
-  else if(e.key==='Delete' || e.key==='Backspace') { e.preventDefault(); deleteSelected(); }
+
+  if(e.key==='z' || e.key==='Z'){ e.preventDefault(); undo(); return; }
+  if(!selectedId) return;
+
+  if(ARROW_DIRS[e.key]){
+    e.preventDefault();
+    if(selectedKind==='placed'){
+      const piece = placedPieces.find(p=>p.id===selectedId);
+      if(piece){
+        const [dr,dc] = ARROW_DIRS[e.key];
+        const nr = piece.anchorRow+dr, nc = piece.anchorCol+dc;
+        if(isValidPlacement(piece.cells, nr, nc, piece.id)){
+          pushUndo();
+          piece.anchorRow = nr; piece.anchorCol = nc;
+          renderAll();
+        }
+      }
+    }
+    return;
+  }
+  if(e.key==='r' || e.key==='R'){ transformSelected(rotateCells); return; }
+  if(e.key==='t' || e.key==='T' || e.key==='f' || e.key==='F'){ transformSelected(flipCells); return; }
+  if(e.key==='d' || e.key==='D'){ duplicateSelected(); return; }
+  if(e.key==='Delete' || e.key==='Backspace'){ e.preventDefault(); deleteSelected(); return; }
 });
 
-/* click on placed piece to select / drag to move; contextmenu to delete */
 piecesLayerEl.addEventListener('pointerdown', e=>{
   const wrapEl = e.target.closest('.placed-piece');
   if(!wrapEl) return;
@@ -999,16 +1141,20 @@ piecesLayerEl.addEventListener('contextmenu', e=>{
   const wrapEl = e.target.closest('.placed-piece');
   if(!wrapEl) return;
   e.preventDefault();
+  pushUndo();
   placedPieces = placedPieces.filter(p=>p.id!==wrapEl.dataset.id);
-  if(selectedId===wrapEl.dataset.id) selectedId = null;
-  renderPlacedPieces();
+  if(selectedId===wrapEl.dataset.id){ selectedId = null; selectedKind = null; }
+  renderAll();
 });
 boardEl.addEventListener('pointerdown', e=>{
   if(e.target.classList.contains('board-cell')) deselect();
 });
+floatingLayerEl.addEventListener('pointerdown', e=>{
+  if(e.target === floatingLayerEl) deselect();
+});
 
 /* ═══════════════════════════════════════════════
-   GRID SIZE CONTROL
+   GRID SIZE / CLEAR BOARD
 ═══════════════════════════════════════════════ */
 document.getElementById('apply-grid-size').addEventListener('click', ()=>{
   const input = document.getElementById('grid-size-input');
@@ -1020,27 +1166,37 @@ document.getElementById('apply-grid-size').addEventListener('click', ()=>{
   gridSize = n;
   localStorage.setItem('poly_gridSize', gridSize);
   placedPieces = [];
-  selectedId = null;
+  selectedId = null; selectedKind = null;
   setupBoard();
-  renderPlacedPieces();
+  renderAll();
 });
 
 document.getElementById('clear-board-btn').addEventListener('click', ()=>{
   if(!placedPieces.length) return;
   if(!confirm('Clear all pieces from the board?')) return;
+  pushUndo();
   placedPieces = [];
-  selectedId = null;
-  renderPlacedPieces();
+  selectedId = null; selectedKind = null;
+  renderAll();
 });
 
 /* ═══════════════════════════════════════════════
-   TRAY ORIENTATION DIAL
+   TRAY ORIENTATION CONTROLS
 ═══════════════════════════════════════════════ */
+function refreshTrayPreviews(){
+  renderStandardTiles();
+  renderPentominoTiles();
+  renderCustomTiles();
+}
 document.getElementById('tray-rotate-btn').addEventListener('click', ()=>{
   trayRotation = (trayRotation + 90) % 360;
   document.getElementById('tray-rotate-btn').innerHTML = '&#10227; ' + trayRotation + '&deg;';
-  renderStandardTiles();
-  renderCustomTiles();
+  refreshTrayPreviews();
+});
+document.getElementById('tray-flip-btn').addEventListener('click', ()=>{
+  trayFlipped = !trayFlipped;
+  document.getElementById('tray-flip-btn').classList.toggle('active', trayFlipped);
+  refreshTrayPreviews();
 });
 
 /* ═══════════════════════════════════════════════
@@ -1133,7 +1289,6 @@ function openEditor(id){
   syncEditorUI();
   buildEditorColors();
   document.getElementById('editor-name').value = def.name;
-  document.getElementById('editor-title').textContent = 'Design your polyomino';
   document.getElementById('editor-modal').classList.remove('hidden');
 }
 
@@ -1171,7 +1326,6 @@ document.getElementById('editor-flip').addEventListener('click', ()=>{
   });
   syncEditorUI();
 });
-
 document.getElementById('editor-save').addEventListener('click', ()=>{
   const cells = extractEditorCells();
   if(!cells){ alert('Draw at least one cell first!'); return; }
@@ -1192,8 +1346,9 @@ document.getElementById('editor-save').addEventListener('click', ()=>{
 document.getElementById('grid-size-input').value = gridSize;
 setupBoard();
 renderStandardTiles();
+renderPentominoTiles();
 renderCustomTiles();
-renderPlacedPieces();
+renderAll();
 
 window.addEventListener('resize', updateSelToolbar);
 window.addEventListener('scroll', updateSelToolbar);

@@ -21,6 +21,7 @@
     --danger: #a34a4a;
     --teal: #4f8a8b;
     --plum: #7d5a78;
+    --edit-color: #5a7d8c;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
@@ -94,6 +95,9 @@
   .btn-clear  { background: var(--panel-border); color: var(--text); }
   .btn-trash  { background: var(--danger); }
   .btn-save   { background: var(--plum); }
+  /* Rotate is always teal, flip/reflect is always plum, wherever they appear */
+  .btn-rotate { background: var(--teal); }
+  .btn-flip   { background: var(--plum); }
 
   .palette-section.collapsed .palette-tiles { display: none; }
   .palette-section.collapsed .chevron { transform: rotate(-90deg); }
@@ -136,13 +140,7 @@
   .tile:hover { box-shadow: 0 0 8px #d99a4e55; transform: translateY(-2px); }
   .tile:active { cursor: grabbing; }
   .tile .tile-name { font-size: 0.6rem; color: var(--text-dim); text-align: center; white-space: nowrap; }
-  .tile .tile-grid { display: grid; gap: 2px; }
-  .tile .tile-grid .blk {
-    border-radius: 2px;
-    border: 1px solid rgba(0,0,0,0.35);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.35);
-  }
-  .tile .tile-grid .blk.empty { visibility: hidden; border: none; box-shadow: none; }
+  .tile .tile-grid { position: relative; }
 
   .tile-btn {
     position: absolute;
@@ -159,10 +157,16 @@
     display: none;
   }
   .tile:hover .tile-btn { display: block; }
-  .tile-btn.edit { right: -6px; background: var(--teal); }
-  .tile-btn.del  { right: 11px; background: var(--danger); }
-  .tile-btn.flip { right: 28px; background: var(--plum); }
-  .tile-btn.flip.only { right: -6px; }
+  /* positions only here — colors come from the shared .btn-rotate/.btn-flip
+     rules plus these two, so every rotate/flip button app-wide matches */
+  .tile-btn.edit   { right: -6px; background: var(--edit-color); }
+  .tile-btn.del    { right: 13px; background: var(--danger); }
+  .tile-btn.flip   { right: 32px; }
+  .tile-btn.rotate { right: 51px; }
+  /* standard/pentomino tiles only ever show rotate+flip (no edit/del),
+     so they get the first two slots instead of the crowded 4-button layout */
+  .tile-btn.flip.pair   { right: -6px; }
+  .tile-btn.rotate.pair { right: 13px; }
 
   .add-tile {
     background: var(--board-cell);
@@ -217,7 +221,7 @@
     cursor: grab;
   }
   .floating-piece.selected { box-shadow: 0 0 0 2px #fff; }
-  .floating-piece .tile-grid .blk:not(.empty) { filter: grayscale(0.25) brightness(0.85); }
+  .floating-piece .tile-grid .blk { filter: grayscale(0.25) brightness(0.85); }
 
   #board-outer {
     position: relative;
@@ -239,30 +243,23 @@
 
   #pieces-layer { position: absolute; inset: 10px; pointer-events: none; }
 
-  .placed-piece { position: absolute; display: grid; }
+  .placed-piece { position: absolute; }
   .placed-piece .blk {
-    border-radius: 3px;
     pointer-events: auto;
     cursor: grab;
-    border: 2px solid rgba(0,0,0,0.35);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.45);
   }
-  .placed-piece .blk.empty { visibility: hidden; pointer-events: none; border: none; box-shadow: none; }
-  .placed-piece.selected .blk:not(.empty) {
+  .placed-piece.selected .blk {
     box-shadow: inset 0 0 0 2px #fff, 0 0 8px #fff8;
   }
 
   .ghost {
     position: absolute;
-    display: grid;
     pointer-events: none;
     opacity: 0.7;
     z-index: 999;
     transition: left 0.05s linear, top 0.05s linear;
   }
-  .ghost .blk { border-radius: 3px; border: 2px solid rgba(0,0,0,0.35); }
-  .ghost .blk.empty { visibility: hidden; border: none; }
-  .ghost.invalid .blk:not(.empty) { filter: grayscale(0.5) brightness(0.7); }
+  .ghost.invalid .blk { filter: grayscale(0.5) brightness(0.7); }
 
   .sel-toolbar {
     position: fixed;
@@ -339,8 +336,8 @@
 
     <div class="row tray-controls-row">
       Tray
-      <button class="btn-mini" id="tray-rotate-btn" title="Rotate pieces as you drag them from the tray">&#10227; 0&deg;</button>
-      <button class="btn-mini" id="tray-flip-btn" title="Flip pieces as you drag them from the tray">&#8646;</button>
+      <button class="btn-mini btn-rotate" id="tray-rotate-btn" title="Rotate pieces as you drag them from the tray">&#10227; 0&deg;</button>
+      <button class="btn-mini btn-flip" id="tray-flip-btn" title="Flip pieces as you drag them from the tray">&#8646;</button>
     </div>
 
     <div class="palette-section" id="section-standard">
@@ -374,8 +371,8 @@
     <div class="editor-label">Draw cells</div>
     <div id="editor-grid"></div>
     <div class="modal-btn-row" style="margin-top:8px;">
-      <button class="btn-mini" id="editor-rotate">&#8635;</button>
-      <button class="btn-mini" id="editor-flip">&#8646;</button>
+      <button class="btn-mini btn-rotate" id="editor-rotate">&#8635;</button>
+      <button class="btn-mini btn-flip" id="editor-flip">&#8646;</button>
       <button class="btn-clear" id="editor-clear">&#10005;</button>
     </div>
     <div class="editor-label">Color</div>
@@ -611,33 +608,68 @@ function updateHolesCount(){
 function pxPos(index){ return index*(CELL+GAP); }
 
 /* ═══════════════════════════════════════════════
+   SOLID SHAPE RENDERING
+   A piece is drawn as one seamless solid shape: each cell is absolutely
+   positioned and, on any side where a same-piece cell is adjacent, is
+   widened to swallow the gap and has no border there — so a piece's own
+   cells fuse together with no visible seams, while the outer silhouette
+   still gets a border/shadow/rounded corners. That's what keeps two
+   same-colored pieces visually distinct when placed touching each other:
+   the real gap between *different* pieces is untouched; only the seams
+   *inside* one piece disappear.
+═══════════════════════════════════════════════ */
+function hasCellAt(cells, r, c){ return cells.some(([cr,cc])=>cr===r&&cc===c); }
+
+function buildSolidShape(cells, color, cellSize, gapSize){
+  const {rows, cols} = bounds(cells);
+  const container = document.createElement('div');
+  container.className = 'tile-grid';
+  container.style.position = 'relative';
+  container.style.width = (cols*cellSize + (cols-1)*gapSize) + 'px';
+  container.style.height = (rows*cellSize + (rows-1)*gapSize) + 'px';
+  cells.forEach(([r,c])=>{
+    const hasTop = hasCellAt(cells, r-1, c);
+    const hasBottom = hasCellAt(cells, r+1, c);
+    const hasLeft = hasCellAt(cells, r, c-1);
+    const hasRight = hasCellAt(cells, r, c+1);
+    const blk = document.createElement('div');
+    blk.className = 'blk';
+    blk.dataset.dr = r;
+    blk.dataset.dc = c;
+    blk.style.position = 'absolute';
+    blk.style.left = (c*(cellSize+gapSize)) + 'px';
+    blk.style.top = (r*(cellSize+gapSize)) + 'px';
+    blk.style.width = (cellSize + (hasRight ? gapSize : 0)) + 'px';
+    blk.style.height = (cellSize + (hasBottom ? gapSize : 0)) + 'px';
+    blk.style.background = color;
+    const edge = '2px solid rgba(0,0,0,0.4)';
+    blk.style.borderTop = hasTop ? 'none' : edge;
+    blk.style.borderLeft = hasLeft ? 'none' : edge;
+    blk.style.borderRight = hasRight ? 'none' : edge;
+    blk.style.borderBottom = hasBottom ? 'none' : edge;
+    blk.style.borderTopLeftRadius = (!hasTop && !hasLeft) ? '4px' : '0';
+    blk.style.borderTopRightRadius = (!hasTop && !hasRight) ? '4px' : '0';
+    blk.style.borderBottomLeftRadius = (!hasBottom && !hasLeft) ? '4px' : '0';
+    blk.style.borderBottomRightRadius = (!hasBottom && !hasRight) ? '4px' : '0';
+    blk.style.boxShadow = hasBottom ? 'none' : '0 1px 3px rgba(0,0,0,0.4)';
+    blk.style.boxSizing = 'border-box';
+    container.appendChild(blk);
+  });
+  return container;
+}
+
+/* ═══════════════════════════════════════════════
    RENDERING
 ═══════════════════════════════════════════════ */
 function renderPlacedPieces(){
   piecesLayerEl.innerHTML = '';
   placedPieces.forEach(p=>{
-    const {rows, cols} = bounds(p.cells);
     const wrap = document.createElement('div');
     wrap.className = 'placed-piece' + (p.id===selectedId && selectedKind==='placed' ? ' selected' : '');
     wrap.style.left = pxPos(p.anchorCol) + 'px';
     wrap.style.top = pxPos(p.anchorRow) + 'px';
-    wrap.style.gridTemplateColumns = `repeat(${cols}, ${CELL}px)`;
-    wrap.style.gridTemplateRows = `repeat(${rows}, ${CELL}px)`;
-    wrap.style.gap = GAP + 'px';
     wrap.dataset.id = p.id;
-    for(let r=0;r<rows;r++){
-      for(let c=0;c<cols;c++){
-        const has = p.cells.some(([cr,cc])=>cr===r&&cc===c);
-        const blk = document.createElement('div');
-        blk.className = 'blk' + (has ? '' : ' empty');
-        if(has){
-          blk.style.background = p.color;
-          blk.dataset.dr = r;
-          blk.dataset.dc = c;
-        }
-        wrap.appendChild(blk);
-      }
-    }
+    wrap.appendChild(buildSolidShape(p.cells, p.color, CELL, GAP));
     piecesLayerEl.appendChild(wrap);
   });
   updateHolesCount();
@@ -666,23 +698,7 @@ function renderAll(){
    TILE PREVIEW RENDERING
 ═══════════════════════════════════════════════ */
 function buildTilePreview(cells, color, cellPx){
-  const {rows, cols} = bounds(cells);
-  const grid = document.createElement('div');
-  grid.className = 'tile-grid';
-  grid.style.gridTemplateColumns = `repeat(${cols}, ${cellPx}px)`;
-  grid.style.gridTemplateRows = `repeat(${rows}, ${cellPx}px)`;
-  for(let r=0;r<rows;r++){
-    for(let c=0;c<cols;c++){
-      const has = cells.some(([cr,cc])=>cr===r&&cc===c);
-      const blk = document.createElement('div');
-      blk.className = 'blk' + (has?'':' empty');
-      blk.style.width = cellPx+'px';
-      blk.style.height = cellPx+'px';
-      if(has) blk.style.background = color;
-      grid.appendChild(blk);
-    }
-  }
-  return grid;
+  return buildSolidShape(cells, color, cellPx, 2);
 }
 
 /* ═══════════════════════════════════════════════
@@ -701,8 +717,20 @@ function renderFixedTiles(containerId, piecesArray, overrideKey){
     label.textContent = def.name;
     tile.appendChild(label);
 
+    const rotateBtn = document.createElement('button');
+    rotateBtn.className = 'tile-btn rotate pair btn-rotate';
+    rotateBtn.textContent = '↻';
+    rotateBtn.title = 'Rotate';
+    rotateBtn.onclick = (e)=>{
+      e.stopPropagation();
+      def.cells = rotateCells(def.cells);
+      saveOverrides(overrideKey, piecesArray);
+      renderFixedTiles(containerId, piecesArray, overrideKey);
+    };
+    tile.appendChild(rotateBtn);
+
     const flipBtn = document.createElement('button');
-    flipBtn.className = 'tile-btn flip only';
+    flipBtn.className = 'tile-btn flip pair btn-flip';
     flipBtn.textContent = '⇆';
     flipBtn.title = 'Flip';
     flipBtn.onclick = (e)=>{
@@ -743,8 +771,21 @@ function renderCustomTiles(){
     editBtn.onclick = (e)=>{ e.stopPropagation(); openEditor(def.id); };
     tile.appendChild(editBtn);
 
+    const rotateBtn = document.createElement('button');
+    rotateBtn.className = 'tile-btn rotate btn-rotate';
+    rotateBtn.textContent = '↻';
+    rotateBtn.title = 'Rotate';
+    rotateBtn.onclick = (e)=>{
+      e.stopPropagation();
+      def.cells = rotateCells(def.cells);
+      def.edited = true;
+      saveCustomPieces();
+      renderCustomTiles();
+    };
+    tile.appendChild(rotateBtn);
+
     const flipBtn = document.createElement('button');
-    flipBtn.className = 'tile-btn flip';
+    flipBtn.className = 'tile-btn flip btn-flip';
     flipBtn.textContent = '⇆';
     flipBtn.title = 'Flip';
     flipBtn.onclick = (e)=>{
@@ -818,23 +859,9 @@ let drag = null;
            sourceId, startX, startY, moved} */
 
 function makeGhost(cells, color){
-  const {rows, cols} = bounds(cells);
   const ghost = document.createElement('div');
   ghost.className = 'ghost';
-  ghost.style.gridTemplateColumns = `repeat(${cols}, ${CELL}px)`;
-  ghost.style.gridTemplateRows = `repeat(${rows}, ${CELL}px)`;
-  ghost.style.gap = GAP + 'px';
-  for(let r=0;r<rows;r++){
-    for(let c=0;c<cols;c++){
-      const has = cells.some(([cr,cc])=>cr===r&&cc===c);
-      const blk = document.createElement('div');
-      blk.className = 'blk' + (has?'':' empty');
-      blk.style.width = CELL+'px';
-      blk.style.height = CELL+'px';
-      if(has) blk.style.background = color;
-      ghost.appendChild(blk);
-    }
-  }
+  ghost.appendChild(buildSolidShape(cells, color, CELL, GAP));
   piecesLayerEl.appendChild(ghost);
   return ghost;
 }
@@ -1091,8 +1118,8 @@ function updateSelToolbar(){
     b.onclick = fn;
     return b;
   };
-  bar.appendChild(mk('↻','Rotate (R)', ()=>transformSelected(rotateCells)));
-  bar.appendChild(mk('⇆','Flip (T)', ()=>transformSelected(flipCells)));
+  bar.appendChild(mk('↻','Rotate (R)', ()=>transformSelected(rotateCells), 'btn-mini btn-rotate'));
+  bar.appendChild(mk('⇆','Flip (T)', ()=>transformSelected(flipCells), 'btn-mini btn-flip'));
   bar.appendChild(mk('⧉','Duplicate (D)', duplicateSelected));
   bar.appendChild(mk('✕','Delete (Del)', deleteSelected, 'btn-trash'));
   document.body.appendChild(bar);

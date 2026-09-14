@@ -74,6 +74,8 @@
     background: var(--board-cell);
     color: var(--text);
   }
+  .row input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+  .row label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 
   .tray-controls-row { padding-bottom: 10px; border-bottom: 1px solid var(--panel-border); }
 
@@ -197,31 +199,23 @@
 
   .board-controls { display: flex; gap: 8px; align-items: center; }
 
-  #floating-layer {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    justify-content: center;
-    align-content: center;
-    min-height: 40px;
-    padding: 6px;
-    border: 1px dashed var(--invalid-border);
+  .error-toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    background: var(--danger);
+    color: #fff;
+    padding: 8px 16px;
     border-radius: 8px;
-    background: rgba(194,90,90,0.08);
-    max-width: 480px;
-    width: 100%;
-    visibility: hidden;
+    font-size: 0.8rem;
+    font-weight: 600;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 3000;
   }
-  #floating-layer.has-pieces { visibility: visible; }
-
-  .floating-piece {
-    position: relative;
-    border-radius: 6px;
-    padding: 4px;
-    cursor: grab;
-  }
-  .floating-piece.selected { box-shadow: 0 0 0 2px #fff; }
-  .floating-piece .piece-svg { filter: grayscale(0.25) brightness(0.85); }
+  .error-toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   #board-outer {
     position: relative;
@@ -250,7 +244,13 @@
   }
   .placed-piece .piece-svg { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4)); }
   .placed-piece.selected .piece-svg {
-    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4)) drop-shadow(0 0 3px #fff) drop-shadow(0 0 3px #fff);
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4)) drop-shadow(0 0 3px rgba(255,255,255,0.5));
+  }
+  /* Comes after .selected so it wins when a piece is both selected and
+     invalid — which is the common case, since the piece needing fixing
+     stays selected until it's resolved. */
+  .placed-piece.invalid .piece-svg {
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4)) drop-shadow(0 0 4px rgba(220,70,70,0.95)) drop-shadow(0 0 4px rgba(220,70,70,0.95));
   }
 
   .ghost {
@@ -312,6 +312,7 @@
 <body>
 
 <div class="topbar"><span class="logo">&#9670;</span><span class="title">Polyominoes</span></div>
+<div id="error-toast" class="error-toast"></div>
 
 <div class="main-row">
 
@@ -319,7 +320,6 @@
     <div class="board-controls">
       <button class="btn-trash" id="clear-board-btn">&#128465; Clear</button>
     </div>
-    <div id="floating-layer"></div>
     <div id="board-outer">
       <div id="board"></div>
       <div id="pieces-layer"></div>
@@ -333,6 +333,9 @@
       Grid
       <input type="number" id="grid-size-input" min="4" max="16" value="8">
       <button class="btn-mini" id="apply-grid-size">Apply</button>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="infinite-grid-toggle"> Infinite Grid</label>
     </div>
 
     <div class="row tray-controls-row">
@@ -406,7 +409,8 @@ const PALETTE_COLORS = [
 ];
 
 function computeCellSize(){
-  const raw = Math.floor((MAX_BOARD_PX - (gridSize-1)*GAP) / gridSize);
+  const dim = Math.max(gridRows(), gridCols());
+  const raw = Math.floor((MAX_BOARD_PX - (dim-1)*GAP) / dim);
   return Math.max(MIN_CELL, Math.min(MAX_CELL, raw));
 }
 
@@ -478,7 +482,59 @@ applyOverrides('pentomino', PENTOMINO_PIECES);
 /* ═══════════════════════════════════════════════
    STATE
 ═══════════════════════════════════════════════ */
-let gridSize = parseInt(localStorage.getItem('poly_gridSize')) || 8;
+// The grid is tracked as an absolute-coordinate rectangle [minRow..maxRow] x
+// [minCol..maxCol] rather than a fixed 0-based size. This lets Infinite Grid
+// mode expand a specific side (e.g. just the right edge) without ever having
+// to shift existing pieces' stored anchorRow/anchorCol — only the rendering
+// offset (see pxCol/pxRow) and the bounds checks change.
+let gridMinRow, gridMaxRow, gridMinCol, gridMaxCol;
+(function initGridBounds(){
+  let bounds = null;
+  try { bounds = JSON.parse(localStorage.getItem('poly_gridBounds')); } catch(e){}
+  if(bounds && typeof bounds.minRow === 'number'){
+    ({minRow:gridMinRow, maxRow:gridMaxRow, minCol:gridMinCol, maxCol:gridMaxCol} = bounds);
+  } else {
+    const n = parseInt(localStorage.getItem('poly_gridSize')) || 8;
+    gridMinRow = 0; gridMaxRow = n-1; gridMinCol = 0; gridMaxCol = n-1;
+  }
+})();
+function gridRows(){ return gridMaxRow - gridMinRow + 1; }
+function gridCols(){ return gridMaxCol - gridMinCol + 1; }
+function saveGridBounds(){
+  localStorage.setItem('poly_gridBounds', JSON.stringify({minRow:gridMinRow, maxRow:gridMaxRow, minCol:gridMinCol, maxCol:gridMaxCol}));
+}
+
+let infiniteGrid = localStorage.getItem('poly_infiniteGrid') === 'true';
+const INFINITE_MIN_DIM = 8;
+const EXPAND_BUFFER = 2;
+
+// Grow the grid to keep `piece` comfortably inside it — only on the side(s)
+// it's actually near, so pushing a piece toward the right edge only grows
+// the right side (an existing piece's stored coordinates never change).
+function maybeExpandGrid(piece){
+  if(!infiniteGrid || !piece) return;
+  const {rows, cols} = bounds(piece.cells);
+  let changed = false;
+  if(piece.anchorRow <= gridMinRow){ gridMinRow = Math.min(gridMinRow, piece.anchorRow) - EXPAND_BUFFER; changed = true; }
+  if(piece.anchorRow + rows - 1 >= gridMaxRow){ gridMaxRow = Math.max(gridMaxRow, piece.anchorRow+rows-1) + EXPAND_BUFFER; changed = true; }
+  if(piece.anchorCol <= gridMinCol){ gridMinCol = Math.min(gridMinCol, piece.anchorCol) - EXPAND_BUFFER; changed = true; }
+  if(piece.anchorCol + cols - 1 >= gridMaxCol){ gridMaxCol = Math.max(gridMaxCol, piece.anchorCol+cols-1) + EXPAND_BUFFER; changed = true; }
+  if(changed){ saveGridBounds(); setupBoard(); }
+}
+
+// Shrink the grid back when its outermost row/col has no pieces left in it,
+// down to a sensible minimum — the mirror image of maybeExpandGrid.
+function maybeContractGrid(){
+  if(!infiniteGrid) return;
+  const rowHasPiece = r => placedPieces.some(p=>p.cells.some(([dr])=>p.anchorRow+dr===r));
+  const colHasPiece = c => placedPieces.some(p=>p.cells.some(([,dc])=>p.anchorCol+dc===c));
+  let changed = false;
+  while(gridRows() > INFINITE_MIN_DIM && !rowHasPiece(gridMinRow)){ gridMinRow++; changed = true; }
+  while(gridRows() > INFINITE_MIN_DIM && !rowHasPiece(gridMaxRow)){ gridMaxRow--; changed = true; }
+  while(gridCols() > INFINITE_MIN_DIM && !colHasPiece(gridMinCol)){ gridMinCol++; changed = true; }
+  while(gridCols() > INFINITE_MIN_DIM && !colHasPiece(gridMaxCol)){ gridMaxCol--; changed = true; }
+  if(changed){ saveGridBounds(); setupBoard(); }
+}
 
 /* Tray transform: rotates/flips pieces as they're dragged from the tray.
    Only affects future drags-from-tray — never retroactively touches pieces
@@ -520,50 +576,73 @@ let customIdCounter = customPieces.reduce((m,p)=>{
 },0) + 1;
 
 let placedPieces = [];   // {id, cells, color, name, anchorRow, anchorCol}
-let floatingPieces = []; // {id, cells, color, name} — unplaced, hovering above the board
 let placedIdCounter = 1;
 let selectedId = null;
-let selectedKind = null; // 'placed' | 'floating'
+
+// The one piece (if any) currently sitting invalid — overlapping another
+// piece, or extending past the grid edge in fixed-size mode. While set,
+// selection is locked to this piece: you can keep moving/rotating/flipping/
+// duplicating/deleting it, but selecting or dragging anything else is
+// blocked (with an on-screen message) until it's valid again or removed.
+let pendingPlacementId = null;
+
+function updatePendingPlacement(pieceId){
+  const piece = placedPieces.find(p=>p.id===pieceId);
+  const valid = piece && isValidPlacement(piece.cells, piece.anchorRow, piece.anchorCol, piece.id);
+  if(!valid) pendingPlacementId = pieceId;
+  else if(pendingPlacementId === pieceId) pendingPlacementId = null;
+}
+
+let blockedMsgTimer = null;
+function showBlockedMessage(){
+  const el = document.getElementById('error-toast');
+  el.textContent = 'Previous piece not placed in the right place';
+  el.classList.add('visible');
+  clearTimeout(blockedMsgTimer);
+  blockedMsgTimer = setTimeout(()=> el.classList.remove('visible'), 2500);
+}
 
 let undoStack = [];
 const UNDO_LIMIT = 50;
 function pushUndo(){
-  undoStack.push(JSON.stringify({placedPieces, floatingPieces, selectedId, selectedKind}));
+  undoStack.push(JSON.stringify({placedPieces, selectedId, pendingPlacementId, gridMinRow, gridMaxRow, gridMinCol, gridMaxCol}));
   if(undoStack.length > UNDO_LIMIT) undoStack.shift();
 }
 function undo(){
   if(!undoStack.length) return;
   const snap = JSON.parse(undoStack.pop());
   placedPieces = snap.placedPieces;
-  floatingPieces = snap.floatingPieces;
   selectedId = snap.selectedId;
-  selectedKind = snap.selectedKind;
+  pendingPlacementId = snap.pendingPlacementId;
+  gridMinRow = snap.gridMinRow; gridMaxRow = snap.gridMaxRow;
+  gridMinCol = snap.gridMinCol; gridMaxCol = snap.gridMaxCol;
+  setupBoard();
   renderAll();
 }
 
 const boardEl = document.getElementById('board');
 const piecesLayerEl = document.getElementById('pieces-layer');
-const floatingLayerEl = document.getElementById('floating-layer');
 
 /* ═══════════════════════════════════════════════
    BOARD SETUP
 ═══════════════════════════════════════════════ */
 function setupBoard(){
   CELL = computeCellSize();
-  boardEl.style.gridTemplateColumns = `repeat(${gridSize}, ${CELL}px)`;
-  boardEl.style.gridTemplateRows = `repeat(${gridSize}, ${CELL}px)`;
+  const rows = gridRows(), cols = gridCols();
+  boardEl.style.gridTemplateColumns = `repeat(${cols}, ${CELL}px)`;
+  boardEl.style.gridTemplateRows = `repeat(${rows}, ${CELL}px)`;
   boardEl.style.gap = GAP + 'px';
   boardEl.innerHTML = '';
-  for(let r=0;r<gridSize;r++){
-    for(let c=0;c<gridSize;c++){
+  for(let i=0;i<rows;i++){
+    for(let j=0;j<cols;j++){
       const cell = document.createElement('div');
       cell.className = 'board-cell';
-      cell.dataset.r = r;
-      cell.dataset.c = c;
+      cell.dataset.r = gridMinRow + i;
+      cell.dataset.c = gridMinCol + j;
       boardEl.appendChild(cell);
     }
   }
-  document.getElementById('total-count').textContent = gridSize*gridSize;
+  document.getElementById('total-count').textContent = rows*cols;
 }
 
 function occupied(excludeId){
@@ -579,18 +658,27 @@ function isValidPlacement(cells, anchorRow, anchorCol, excludeId){
   const occ = occupied(excludeId);
   for(const [r,c] of cells){
     const rr = anchorRow+r, cc = anchorCol+c;
-    if(rr<0 || cc<0 || rr>=gridSize || cc>=gridSize) return false;
+    if(rr<gridMinRow || cc<gridMinCol || rr>gridMaxRow || cc>gridMaxCol) return false;
     if(occ.has(rr+','+cc)) return false;
   }
   return true;
 }
 
+// A piece only gets deleted by dragging it off the board once NONE of its
+// cells overlap the grid at all — partially overlapping the border is a
+// valid (if "invalid-tinted") place for it to sit, per the placement rules.
+function isCompletelyOffBoard(cells, anchorRow, anchorCol){
+  const {rows, cols} = bounds(cells);
+  return (anchorRow+rows-1 < gridMinRow) || (anchorRow > gridMaxRow) ||
+         (anchorCol+cols-1 < gridMinCol) || (anchorCol > gridMaxCol);
+}
+
 function findOpenAnchor(cells, prefRow, prefCol){
   const {rows, cols} = bounds(cells);
-  if(rows>gridSize || cols>gridSize) return null;
+  if(rows>gridRows() || cols>gridCols()) return null;
   let best = null, bestDist = Infinity;
-  for(let r=0; r<=gridSize-rows; r++){
-    for(let c=0; c<=gridSize-cols; c++){
+  for(let r=gridMinRow; r<=gridMaxRow-rows+1; r++){
+    for(let c=gridMinCol; c<=gridMaxCol-cols+1; c++){
       if(isValidPlacement(cells, r, c, null)){
         const dist = Math.abs(r-prefRow) + Math.abs(c-prefCol);
         if(dist < bestDist){ bestDist = dist; best = {row:r, col:c}; }
@@ -602,11 +690,16 @@ function findOpenAnchor(cells, prefRow, prefCol){
 
 function updateHolesCount(){
   const covered = new Set();
-  placedPieces.forEach(p=>p.cells.forEach(([r,c])=>covered.add((p.anchorRow+r)+','+(p.anchorCol+c))));
-  document.getElementById('holes-count').textContent = gridSize*gridSize - covered.size;
+  placedPieces.forEach(p=>p.cells.forEach(([r,c])=>{
+    const rr=p.anchorRow+r, cc=p.anchorCol+c;
+    if(rr>=gridMinRow && rr<=gridMaxRow && cc>=gridMinCol && cc<=gridMaxCol) covered.add(rr+','+cc);
+  }));
+  document.getElementById('holes-count').textContent = gridRows()*gridCols() - covered.size;
 }
 
 function pxPos(index){ return index*(CELL+GAP); }
+function pxCol(absCol){ return pxPos(absCol - gridMinCol); }
+function pxRow(absRow){ return pxPos(absRow - gridMinRow); }
 
 /* ═══════════════════════════════════════════════
    SOLID SHAPE RENDERING
@@ -784,9 +877,11 @@ function renderPlacedPieces(){
   piecesLayerEl.innerHTML = '';
   placedPieces.forEach(p=>{
     const wrap = document.createElement('div');
-    wrap.className = 'placed-piece' + (p.id===selectedId && selectedKind==='placed' ? ' selected' : '');
-    wrap.style.left = pxPos(p.anchorCol) + 'px';
-    wrap.style.top = pxPos(p.anchorRow) + 'px';
+    wrap.className = 'placed-piece'
+      + (p.id===selectedId ? ' selected' : '')
+      + (p.id===pendingPlacementId ? ' invalid' : '');
+    wrap.style.left = pxCol(p.anchorCol) + 'px';
+    wrap.style.top = pxRow(p.anchorRow) + 'px';
     wrap.dataset.id = p.id;
     wrap.appendChild(buildSolidShape(p.cells, p.color, CELL, GAP));
     piecesLayerEl.appendChild(wrap);
@@ -794,22 +889,8 @@ function renderPlacedPieces(){
   updateHolesCount();
 }
 
-function renderFloatingPieces(){
-  floatingLayerEl.innerHTML = '';
-  floatingLayerEl.classList.toggle('has-pieces', floatingPieces.length > 0);
-  floatingPieces.forEach(p=>{
-    const tile = document.createElement('div');
-    tile.className = 'floating-piece' + (p.id===selectedId && selectedKind==='floating' ? ' selected' : '');
-    tile.dataset.id = p.id;
-    tile.appendChild(buildTilePreview(p.cells, p.color, 22));
-    tile.addEventListener('pointerdown', e=>startDragFromFloating(e, p));
-    floatingLayerEl.appendChild(tile);
-  });
-}
-
 function renderAll(){
   renderPlacedPieces();
-  renderFloatingPieces();
   updateSelToolbar();
 }
 
@@ -971,10 +1052,10 @@ document.querySelectorAll('.section-header').forEach(h=>{
 })();
 
 /* ═══════════════════════════════════════════════
-   DRAG (tray → board, board → board, floating → board)
+   DRAG (tray → board, board → board)
 ═══════════════════════════════════════════════ */
 let drag = null;
-/* drag = {mode:'new'|'move'|'float', cells, color, name, grabDR, grabDC, ghostEl,
+/* drag = {mode:'new'|'move', cells, color, name, grabDR, grabDC, ghostEl,
            sourceId, startX, startY, moved} */
 
 function makeGhost(cells, color){
@@ -986,6 +1067,7 @@ function makeGhost(cells, color){
 }
 
 function startDragFromTile(e, cells, color, name){
+  if(pendingPlacementId){ showBlockedMessage(); return; }
   e.preventDefault();
   const {rows, cols} = bounds(cells);
   const grabDR = Math.floor((rows-1)/2);
@@ -1000,7 +1082,7 @@ function startDragFromTile(e, cells, color, name){
 function startDragFromPlaced(e, piece){
   e.preventDefault();
   e.stopPropagation();
-  selectPiece(piece.id, 'placed');
+  selectPiece(piece.id);
   const blk = e.target.closest('.blk');
   const dr = blk ? parseInt(blk.dataset.dr) : 0;
   const dc = blk ? parseInt(blk.dataset.dc) : 0;
@@ -1017,52 +1099,31 @@ function startDragFromPlaced(e, piece){
   window.addEventListener('pointerup', onDragEnd);
 }
 
-function startDragFromFloating(e, piece){
-  e.preventDefault();
-  selectPiece(piece.id, 'floating');
-  const {rows, cols} = bounds(piece.cells);
-  const grabDR = Math.floor((rows-1)/2);
-  const grabDC = Math.floor((cols-1)/2);
-  const ghostEl = makeGhost(piece.cells, piece.color);
-  drag = {
-    mode:'float', cells: piece.cells.map(c=>c.slice()), color: piece.color, name: piece.name,
-    grabDR, grabDC, ghostEl, sourceId: piece.id,
-    startX: e.clientX, startY: e.clientY, moved: false
-  };
-  updateDrag(e.clientX, e.clientY);
-  const tileEl = floatingLayerEl.querySelector(`[data-id="${piece.id}"]`);
-  if(tileEl) tileEl.style.visibility = 'hidden';
-  window.addEventListener('pointermove', onDragMove);
-  window.addEventListener('pointerup', onDragEnd);
-}
-
 function clearHighlights(){
   document.querySelectorAll('.board-cell.hl-valid, .board-cell.hl-invalid').forEach(el=>{
     el.classList.remove('hl-valid','hl-invalid');
   });
 }
 
-function isOutsideBoard(clientX, clientY){
-  const rect = boardEl.getBoundingClientRect();
-  return clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom;
-}
-
 /* Single source of truth for "where would this drag land right now". Used by
    both pointermove (ghost/highlights) and pointerup (commit), so the ghost
-   you see and the cell you get always agree. */
+   you see and the cell you get always agree. The red/green tint is still
+   shown during the drag as a hint — but per the placement rules, dropping
+   on "invalid" no longer rejects the drop; it just leaves the piece there,
+   tinted invalid, until it's fixed. */
 function updateDrag(clientX, clientY){
   const rect = boardEl.getBoundingClientRect();
   const relX = clientX - rect.left;
   const relY = clientY - rect.top;
-  const pointerCol = Math.floor(relX / (CELL+GAP));
-  const pointerRow = Math.floor(relY / (CELL+GAP));
+  const pointerCol = Math.floor(relX / (CELL+GAP)) + gridMinCol;
+  const pointerRow = Math.floor(relY / (CELL+GAP)) + gridMinRow;
   const anchorRow = pointerRow - drag.grabDR;
   const anchorCol = pointerCol - drag.grabDC;
   const excludeId = drag.mode==='move' ? drag.sourceId : null;
   const valid = isValidPlacement(drag.cells, anchorRow, anchorCol, excludeId);
 
-  drag.ghostEl.style.left = pxPos(anchorCol) + 'px';
-  drag.ghostEl.style.top  = pxPos(anchorRow) + 'px';
+  drag.ghostEl.style.left = pxCol(anchorCol) + 'px';
+  drag.ghostEl.style.top  = pxRow(anchorRow) + 'px';
   drag.ghostEl.classList.toggle('invalid', !valid);
 
   clearHighlights();
@@ -1077,7 +1138,7 @@ function updateDrag(clientX, clientY){
 
 function onDragMove(e){
   if(!drag) return;
-  if(drag.mode==='move' || drag.mode==='float'){
+  if(drag.mode==='move'){
     if(Math.abs(e.clientX-drag.startX)>3 || Math.abs(e.clientY-drag.startY)>3) drag.moved = true;
   }
   updateDrag(e.clientX, e.clientY);
@@ -1088,39 +1149,45 @@ function onDragEnd(e){
   window.removeEventListener('pointermove', onDragMove);
   window.removeEventListener('pointerup', onDragEnd);
 
-  if(drag.mode==='move' || drag.mode==='float'){
+  if(drag.mode==='move'){
     if(Math.abs(e.clientX-drag.startX)>3 || Math.abs(e.clientY-drag.startY)>3) drag.moved = true;
   }
-  const { anchorRow, anchorCol, valid } = updateDrag(e.clientX, e.clientY);
+  const { anchorRow, anchorCol } = updateDrag(e.clientX, e.clientY);
   clearHighlights();
   drag.ghostEl.remove();
 
+  const offBoard = isCompletelyOffBoard(drag.cells, anchorRow, anchorCol);
+
   if(drag.mode==='new'){
-    if(valid){
+    // A brand new piece never dropped anywhere on the board at all just
+    // cancels; anything that overlaps the grid at all gets placed, valid
+    // or not (grid locking still applies — it snaps to the cell grid).
+    if(!offBoard){
       pushUndo();
       const id = 'p'+(placedIdCounter++);
-      placedPieces.push({ id, cells: drag.cells, color: drag.color, name: drag.name, anchorRow, anchorCol });
-      selectedId = id; selectedKind = 'placed';
+      const piece = { id, cells: drag.cells, color: drag.color, name: drag.name, anchorRow, anchorCol };
+      placedPieces.push(piece);
+      selectedId = id;
+      updatePendingPlacement(id);
+      maybeExpandGrid(piece);
     }
   } else if(drag.mode==='move'){
     const piece = placedPieces.find(p=>p.id===drag.sourceId);
     if(piece){
-      if(drag.moved && isOutsideBoard(e.clientX, e.clientY)){
+      if(drag.moved && offBoard && !infiniteGrid){
         pushUndo();
         placedPieces = placedPieces.filter(p=>p.id!==piece.id);
-        selectedId = null; selectedKind = null;
-      } else if(drag.moved && valid){
+        if(pendingPlacementId===piece.id) pendingPlacementId = null;
+        if(selectedId===piece.id) selectedId = null;
+        maybeContractGrid();
+      } else if(drag.moved){
         pushUndo();
         piece.anchorRow = anchorRow;
         piece.anchorCol = anchorCol;
+        updatePendingPlacement(piece.id);
+        maybeExpandGrid(piece);
+        maybeContractGrid();
       }
-    }
-  } else if(drag.mode==='float'){
-    if(drag.moved && valid){
-      pushUndo();
-      floatingPieces = floatingPieces.filter(p=>p.id!==drag.sourceId);
-      placedPieces.push({ id: drag.sourceId, cells: drag.cells, color: drag.color, name: drag.name, anchorRow, anchorCol });
-      selectedId = drag.sourceId; selectedKind = 'placed';
     }
   }
   drag = null;
@@ -1130,75 +1197,63 @@ function onDragEnd(e){
 /* ═══════════════════════════════════════════════
    SELECTION / ROTATE / FLIP / DUPLICATE / DELETE
 ═══════════════════════════════════════════════ */
-function selectPiece(id, kind){
+function selectPiece(id){
+  if(pendingPlacementId && id !== pendingPlacementId){ showBlockedMessage(); return; }
   selectedId = id;
-  selectedKind = kind;
   renderAll();
 }
 
 function deselect(){
+  if(pendingPlacementId) return; // must resolve it before it's allowed to lose focus
   selectedId = null;
-  selectedKind = null;
   renderAll();
 }
 
 function deleteSelected(){
   if(!selectedId) return;
   pushUndo();
-  if(selectedKind==='placed') placedPieces = placedPieces.filter(p=>p.id!==selectedId);
-  else if(selectedKind==='floating') floatingPieces = floatingPieces.filter(p=>p.id!==selectedId);
-  selectedId = null; selectedKind = null;
+  placedPieces = placedPieces.filter(p=>p.id!==selectedId);
+  if(pendingPlacementId===selectedId) pendingPlacementId = null;
+  selectedId = null;
+  maybeContractGrid();
   renderAll();
 }
 
+// Rotate/flip always apply in place, at the piece's current anchor — never
+// auto-relocated to find a fit. If that leaves it invalid, it just stays
+// there tinted red until moved (arrow keys or drag) into a valid spot.
 function transformSelected(fn){
   if(!selectedId) return;
-  if(selectedKind==='placed'){
-    const piece = placedPieces.find(p=>p.id===selectedId);
-    if(!piece) return;
-    const newCells = fn(piece.cells);
-    if(isValidPlacement(newCells, piece.anchorRow, piece.anchorCol, piece.id)){
-      pushUndo();
-      piece.cells = newCells;
-      renderAll();
-    } else {
-      // Doesn't fit here — pop it off the board into the floating staging
-      // area (still selected) so it can be freely rotated/flipped with no
-      // fit constraint, then dragged back in once ready.
-      pushUndo();
-      placedPieces = placedPieces.filter(p=>p.id!==piece.id);
-      floatingPieces.push({ id: piece.id, cells: newCells, color: piece.color, name: piece.name });
-      selectedKind = 'floating';
-      renderAll();
-    }
-  } else if(selectedKind==='floating'){
-    const piece = floatingPieces.find(p=>p.id===selectedId);
-    if(!piece) return;
-    pushUndo();
-    piece.cells = fn(piece.cells);
-    renderAll();
-  }
+  const piece = placedPieces.find(p=>p.id===selectedId);
+  if(!piece) return;
+  pushUndo();
+  piece.cells = fn(piece.cells);
+  updatePendingPlacement(piece.id);
+  maybeExpandGrid(piece);
+  maybeContractGrid();
+  renderAll();
 }
 
+// Auto-placement (finding the nearest open spot) happens ONLY here, for
+// duplicate — never for rotate/flip/arrow moves. If there's no open spot,
+// the copy lands directly on top of the original (allowed, since overlap is
+// permitted) and becomes the piece that needs fixing.
 function duplicateSelected(){
   if(!selectedId) return;
-  const source = selectedKind==='placed'
-    ? placedPieces.find(p=>p.id===selectedId)
-    : floatingPieces.find(p=>p.id===selectedId);
+  const source = placedPieces.find(p=>p.id===selectedId);
   if(!source) return;
   pushUndo();
-  const {rows, cols} = bounds(source.cells);
-  const prefRow = selectedKind==='placed' ? source.anchorRow : Math.floor((gridSize-rows)/2);
-  const prefCol = selectedKind==='placed' ? source.anchorCol : Math.floor((gridSize-cols)/2);
-  const anchor = findOpenAnchor(source.cells, prefRow, prefCol);
+  const anchor = findOpenAnchor(source.cells, source.anchorRow, source.anchorCol);
   const newId = 'p'+(placedIdCounter++);
-  if(anchor){
-    placedPieces.push({ id:newId, cells: source.cells.map(c=>c.slice()), color: source.color, name: source.name, anchorRow: anchor.row, anchorCol: anchor.col });
-    selectedId = newId; selectedKind = 'placed';
-  } else {
-    floatingPieces.push({ id:newId, cells: source.cells.map(c=>c.slice()), color: source.color, name: source.name });
-    selectedId = newId; selectedKind = 'floating';
-  }
+  const newPiece = {
+    id: newId, cells: source.cells.map(c=>c.slice()), color: source.color, name: source.name,
+    anchorRow: anchor ? anchor.row : source.anchorRow,
+    anchorCol: anchor ? anchor.col : source.anchorCol
+  };
+  placedPieces.push(newPiece);
+  selectedId = newId;
+  updatePendingPlacement(newId);
+  maybeExpandGrid(newPiece);
   renderAll();
 }
 
@@ -1207,14 +1262,8 @@ function updateSelToolbar(){
   if(bar) bar.remove();
   if(!selectedId) return;
 
-  let piece, wrapEl;
-  if(selectedKind==='placed'){
-    piece = placedPieces.find(p=>p.id===selectedId);
-    wrapEl = piece && piecesLayerEl.querySelector(`[data-id="${piece.id}"]`);
-  } else if(selectedKind==='floating'){
-    piece = floatingPieces.find(p=>p.id===selectedId);
-    wrapEl = piece && floatingLayerEl.querySelector(`[data-id="${piece.id}"]`);
-  }
+  const piece = placedPieces.find(p=>p.id===selectedId);
+  const wrapEl = piece && piecesLayerEl.querySelector(`[data-id="${piece.id}"]`);
   if(!piece || !wrapEl) return;
   const rect = wrapEl.getBoundingClientRect();
 
@@ -1255,19 +1304,21 @@ document.addEventListener('keydown', e=>{
   if(e.key==='z' || e.key==='Z'){ e.preventDefault(); undo(); return; }
   if(!selectedId) return;
 
+  // Arrow keys always move the piece, even into an invalid position — no
+  // fit check, no auto-placement. That's the point: this is how you rescue
+  // a piece that rotate/duplicate left sitting somewhere invalid.
   if(ARROW_DIRS[e.key]){
     e.preventDefault();
-    if(selectedKind==='placed'){
-      const piece = placedPieces.find(p=>p.id===selectedId);
-      if(piece){
-        const [dr,dc] = ARROW_DIRS[e.key];
-        const nr = piece.anchorRow+dr, nc = piece.anchorCol+dc;
-        if(isValidPlacement(piece.cells, nr, nc, piece.id)){
-          pushUndo();
-          piece.anchorRow = nr; piece.anchorCol = nc;
-          renderAll();
-        }
-      }
+    const piece = placedPieces.find(p=>p.id===selectedId);
+    if(piece){
+      const [dr,dc] = ARROW_DIRS[e.key];
+      pushUndo();
+      piece.anchorRow += dr;
+      piece.anchorCol += dc;
+      updatePendingPlacement(piece.id);
+      maybeExpandGrid(piece);
+      maybeContractGrid();
+      renderAll();
     }
     return;
   }
@@ -1281,22 +1332,25 @@ piecesLayerEl.addEventListener('pointerdown', e=>{
   const wrapEl = e.target.closest('.placed-piece');
   if(!wrapEl) return;
   const piece = placedPieces.find(p=>p.id===wrapEl.dataset.id);
-  if(piece) startDragFromPlaced(e, piece);
+  if(!piece) return;
+  if(pendingPlacementId && piece.id !== pendingPlacementId){ showBlockedMessage(); return; }
+  startDragFromPlaced(e, piece);
 });
 piecesLayerEl.addEventListener('contextmenu', e=>{
   const wrapEl = e.target.closest('.placed-piece');
   if(!wrapEl) return;
   e.preventDefault();
+  const id = wrapEl.dataset.id;
+  if(pendingPlacementId && id !== pendingPlacementId){ showBlockedMessage(); return; }
   pushUndo();
-  placedPieces = placedPieces.filter(p=>p.id!==wrapEl.dataset.id);
-  if(selectedId===wrapEl.dataset.id){ selectedId = null; selectedKind = null; }
+  placedPieces = placedPieces.filter(p=>p.id!==id);
+  if(selectedId===id) selectedId = null;
+  if(pendingPlacementId===id) pendingPlacementId = null;
+  maybeContractGrid();
   renderAll();
 });
 boardEl.addEventListener('pointerdown', e=>{
   if(e.target.classList.contains('board-cell')) deselect();
-});
-floatingLayerEl.addEventListener('pointerdown', e=>{
-  if(e.target === floatingLayerEl) deselect();
 });
 
 /* ═══════════════════════════════════════════════
@@ -1309,10 +1363,10 @@ document.getElementById('apply-grid-size').addEventListener('click', ()=>{
   n = Math.max(4, Math.min(16, n));
   input.value = n;
   if(placedPieces.length && !confirm('Changing grid size will clear the board. Continue?')) return;
-  gridSize = n;
-  localStorage.setItem('poly_gridSize', gridSize);
+  gridMinRow = 0; gridMaxRow = n-1; gridMinCol = 0; gridMaxCol = n-1;
+  saveGridBounds();
   placedPieces = [];
-  selectedId = null; selectedKind = null;
+  selectedId = null; pendingPlacementId = null;
   setupBoard();
   renderAll();
 });
@@ -1322,8 +1376,17 @@ document.getElementById('clear-board-btn').addEventListener('click', ()=>{
   if(!confirm('Clear all pieces from the board?')) return;
   pushUndo();
   placedPieces = [];
-  selectedId = null; selectedKind = null;
+  selectedId = null; pendingPlacementId = null;
+  maybeContractGrid();
   renderAll();
+});
+
+document.getElementById('infinite-grid-toggle').addEventListener('change', function(){
+  infiniteGrid = this.checked;
+  localStorage.setItem('poly_infiniteGrid', infiniteGrid);
+  document.getElementById('grid-size-input').disabled = infiniteGrid;
+  document.getElementById('apply-grid-size').disabled = infiniteGrid;
+  if(infiniteGrid) maybeContractGrid();
 });
 
 /* ═══════════════════════════════════════════════
@@ -1489,7 +1552,10 @@ document.getElementById('editor-save').addEventListener('click', ()=>{
 /* ═══════════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════════ */
-document.getElementById('grid-size-input').value = gridSize;
+document.getElementById('grid-size-input').value = Math.max(gridRows(), gridCols());
+document.getElementById('infinite-grid-toggle').checked = infiniteGrid;
+document.getElementById('grid-size-input').disabled = infiniteGrid;
+document.getElementById('apply-grid-size').disabled = infiniteGrid;
 setupBoard();
 renderStandardTiles();
 renderPentominoTiles();

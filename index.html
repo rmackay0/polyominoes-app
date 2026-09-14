@@ -160,13 +160,13 @@
   /* positions only here — colors come from the shared .btn-rotate/.btn-flip
      rules plus these two, so every rotate/flip button app-wide matches */
   .tile-btn.edit   { right: -6px; background: var(--edit-color); }
-  .tile-btn.del    { right: 13px; background: var(--danger); }
-  .tile-btn.flip   { right: 32px; }
-  .tile-btn.rotate { right: 51px; }
+  .tile-btn.del    { right: 18px; background: var(--danger); }
+  .tile-btn.flip   { right: 42px; }
+  .tile-btn.rotate { right: 66px; }
   /* standard/pentomino tiles only ever show rotate+flip (no edit/del),
      so they get the first two slots instead of the crowded 4-button layout */
   .tile-btn.flip.pair   { right: -6px; }
-  .tile-btn.rotate.pair { right: 13px; }
+  .tile-btn.rotate.pair { right: 18px; }
 
   .add-tile {
     background: var(--board-cell);
@@ -221,7 +221,7 @@
     cursor: grab;
   }
   .floating-piece.selected { box-shadow: 0 0 0 2px #fff; }
-  .floating-piece .tile-grid .blk { filter: grayscale(0.25) brightness(0.85); }
+  .floating-piece .piece-svg { filter: grayscale(0.25) brightness(0.85); }
 
   #board-outer {
     position: relative;
@@ -248,8 +248,9 @@
     pointer-events: auto;
     cursor: grab;
   }
-  .placed-piece.selected .blk {
-    box-shadow: inset 0 0 0 2px #fff, 0 0 8px #fff8;
+  .placed-piece .piece-svg { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4)); }
+  .placed-piece.selected .piece-svg {
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4)) drop-shadow(0 0 3px #fff) drop-shadow(0 0 3px #fff);
   }
 
   .ghost {
@@ -259,7 +260,7 @@
     z-index: 999;
     transition: left 0.05s linear, top 0.05s linear;
   }
-  .ghost.invalid .blk { filter: grayscale(0.5) brightness(0.7); }
+  .ghost.invalid .piece-svg { filter: grayscale(0.5) brightness(0.7); }
 
   .sel-toolbar {
     position: fixed;
@@ -620,66 +621,158 @@ function pxPos(index){ return index*(CELL+GAP); }
 ═══════════════════════════════════════════════ */
 function hasCellAt(cells, r, c){ return cells.some(([cr,cc])=>cr===r&&cc===c); }
 
+// Fill path: each cell's true square, plus a bridging rectangle toward every
+// internally-adjacent neighbor (and a small corner patch for 2x2 blocks) —
+// all as ONE path, so it paints as a single seamless region.
+// The rectangles that make up a piece's seamless footprint: each cell's
+// true square, plus a bridging rectangle toward every internally-adjacent
+// neighbor (and a small corner patch for 2x2 blocks). Shared by the fill
+// path and the outline trace below, so both agree on exactly what area
+// the piece covers.
+function buildPieceRects(cells, cellSize, gapSize){
+  const rects = [];
+  cells.forEach(([r,c])=>{
+    const x = c*(cellSize+gapSize), y = r*(cellSize+gapSize);
+    rects.push([x, y, x+cellSize, y+cellSize]);
+    if(hasCellAt(cells, r, c+1)) rects.push([x+cellSize, y, x+cellSize+gapSize, y+cellSize]);
+    if(hasCellAt(cells, r+1, c)) rects.push([x, y+cellSize, x+cellSize, y+cellSize+gapSize]);
+    if(hasCellAt(cells, r, c+1) && hasCellAt(cells, r+1, c) && hasCellAt(cells, r+1, c+1)){
+      rects.push([x+cellSize, y+cellSize, x+cellSize+gapSize, y+cellSize+gapSize]); // 2x2 corner join
+    }
+  });
+  return rects;
+}
+
+function buildFillPath(cells, cellSize, gapSize){
+  return buildPieceRects(cells, cellSize, gapSize)
+    .map(([x0,y0,x1,y1]) => `M${x0},${y0} H${x1} V${y1} H${x0} Z`)
+    .join(' ');
+}
+
+// Outline path: traces the boundary of the same rectangle union used for
+// the fill, as one connected loop per boundary component, so the border
+// renders as a single continuous stroke instead of one border segment per
+// cell. (Per-cell borders were the actual cause of the visible "grid
+// lines" — separate elements can each get their own border independently
+// anti-aliased/composited by the browser, which shows as a hairline seam
+// on some displays even when the edges are computed to align exactly.)
+//
+// Approach: collect every x/y coordinate that appears in any rectangle,
+// use them to build a fine (non-uniform) grid, mark which fine cells fall
+// inside some rectangle, then trace THAT grid's boundary with the
+// standard per-cell-edge algorithm. Because every rectangle's edges are
+// drawn from this one shared coordinate set, adjacent filled fine-cells
+// always meet at an exact shared point — including at T-junctions and
+// other concave corners, which a simpler per-cell extension can't get
+// right (two non-adjacent cells' edges need to meet at one point there).
+function buildOutlinePath(cells, cellSize, gapSize){
+  const rects = buildPieceRects(cells, cellSize, gapSize);
+  const xsSet = new Set(), ysSet = new Set();
+  rects.forEach(([x0,y0,x1,y1])=>{ xsSet.add(x0); xsSet.add(x1); ysSet.add(y0); ysSet.add(y1); });
+  const xs = [...xsSet].sort((a,b)=>a-b);
+  const ys = [...ysSet].sort((a,b)=>a-b);
+  const nx = xs.length-1, ny = ys.length-1;
+  const occ = Array.from({length:ny}, ()=>Array(nx).fill(false));
+  for(let iy=0; iy<ny; iy++){
+    const cy = (ys[iy]+ys[iy+1])/2;
+    for(let ix=0; ix<nx; ix++){
+      const cx = (xs[ix]+xs[ix+1])/2;
+      occ[iy][ix] = rects.some(([x0,y0,x1,y1]) => cx>x0 && cx<x1 && cy>y0 && cy<y1);
+    }
+  }
+  const occAt = (iy,ix) => (iy>=0 && iy<ny && ix>=0 && ix<nx) ? occ[iy][ix] : false;
+  const next = new Map();
+  const key = (x,y)=> x+','+y;
+  for(let iy=0; iy<ny; iy++){
+    for(let ix=0; ix<nx; ix++){
+      if(!occ[iy][ix]) continue;
+      const x0=xs[ix], x1=xs[ix+1], y0=ys[iy], y1=ys[iy+1];
+      if(!occAt(iy-1,ix)) next.set(key(x0,y0), [x1,y0]);
+      if(!occAt(iy,ix+1)) next.set(key(x1,y0), [x1,y1]);
+      if(!occAt(iy+1,ix)) next.set(key(x1,y1), [x0,y1]);
+      if(!occAt(iy,ix-1)) next.set(key(x0,y1), [x0,y0]);
+    }
+  }
+  const visited = new Set();
+  const loops = [];
+  for(const startKey of next.keys()){
+    if(visited.has(startKey)) continue;
+    const pts = [];
+    let curKey = startKey, guard = 0;
+    do {
+      visited.add(curKey);
+      pts.push(curKey.split(',').map(Number));
+      const n = next.get(curKey);
+      if(!n) break;
+      curKey = key(n[0], n[1]);
+      guard++;
+    } while(curKey !== startKey && guard < 10000);
+    if(pts.length >= 3) loops.push(pts);
+  }
+  // drop collinear intermediate points for a tidier path
+  const simplified = loops.map(pts=>{
+    const n = pts.length;
+    return pts.filter((cur,i)=>{
+      const prev = pts[(i-1+n)%n], nxt = pts[(i+1)%n];
+      const dx1=cur[0]-prev[0], dy1=cur[1]-prev[1], dx2=nxt[0]-cur[0], dy2=nxt[1]-cur[1];
+      return dx1*dy2 - dy1*dx2 !== 0;
+    });
+  });
+  return simplified.map(pts => 'M'+pts.map(p=>p.join(',')).join('L')+'Z').join(' ');
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
 function buildSolidShape(cells, color, cellSize, gapSize){
   const {rows, cols} = bounds(cells);
+  const totalW = cols*cellSize + (cols-1)*gapSize;
+  const totalH = rows*cellSize + (rows-1)*gapSize;
+
   const container = document.createElement('div');
   container.className = 'tile-grid';
   container.style.position = 'relative';
-  container.style.width = (cols*cellSize + (cols-1)*gapSize) + 'px';
-  container.style.height = (rows*cellSize + (rows-1)*gapSize) + 'px';
+  container.style.width = totalW + 'px';
+  container.style.height = totalH + 'px';
 
-  function patch(x, y, w, h){
-    const el = document.createElement('div');
-    el.style.position = 'absolute';
-    el.style.left = x+'px'; el.style.top = y+'px';
-    el.style.width = w+'px'; el.style.height = h+'px';
-    el.style.background = color;
-    container.appendChild(el);
-  }
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('width', totalW);
+  svg.setAttribute('height', totalH);
+  svg.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`);
+  svg.classList.add('piece-svg');
+  svg.style.position = 'absolute';
+  svg.style.left = '0';
+  svg.style.top = '0';
+  svg.style.overflow = 'visible';
 
+  const fillPath = document.createElementNS(SVG_NS, 'path');
+  fillPath.setAttribute('d', buildFillPath(cells, cellSize, gapSize));
+  fillPath.setAttribute('fill', color);
+  svg.appendChild(fillPath);
+
+  const outlinePath = document.createElementNS(SVG_NS, 'path');
+  outlinePath.setAttribute('d', buildOutlinePath(cells, cellSize, gapSize));
+  outlinePath.setAttribute('fill', 'none');
+  outlinePath.setAttribute('stroke', 'rgba(0,0,0,0.45)');
+  outlinePath.setAttribute('stroke-width', '2');
+  outlinePath.setAttribute('stroke-linejoin', 'round');
+  svg.appendChild(outlinePath);
+
+  container.appendChild(svg);
+
+  // Invisible per-cell hit targets, purely so drag code can read which
+  // exact cell (dr/dc) was grabbed — no visual styling here at all, so
+  // they can't reintroduce the seam problem.
   cells.forEach(([r,c])=>{
-    const hasTop = hasCellAt(cells, r-1, c);
-    const hasBottom = hasCellAt(cells, r+1, c);
-    const hasLeft = hasCellAt(cells, r, c-1);
-    const hasRight = hasCellAt(cells, r, c+1);
-    const x = c*(cellSize+gapSize), y = r*(cellSize+gapSize);
-
-    // The cell's own box stays at its TRUE size always — the border/radius
-    // trace only this true footprint, on external sides only. (Earlier this
-    // box itself grew to bridge gaps, which dragged its border along for
-    // the ride and produced little border "flags" poking into the seam at
-    // concave corners of L/T/S/Z-shaped pieces — jagged, not solid.)
     const blk = document.createElement('div');
     blk.className = 'blk';
     blk.dataset.dr = r;
     blk.dataset.dc = c;
     blk.style.position = 'absolute';
-    blk.style.left = x + 'px';
-    blk.style.top = y + 'px';
+    blk.style.left = (c*(cellSize+gapSize)) + 'px';
+    blk.style.top = (r*(cellSize+gapSize)) + 'px';
     blk.style.width = cellSize + 'px';
     blk.style.height = cellSize + 'px';
-    blk.style.background = color;
-    blk.style.boxSizing = 'border-box';
-    const edge = '2px solid rgba(0,0,0,0.4)';
-    blk.style.borderTop = hasTop ? 'none' : edge;
-    blk.style.borderLeft = hasLeft ? 'none' : edge;
-    blk.style.borderRight = hasRight ? 'none' : edge;
-    blk.style.borderBottom = hasBottom ? 'none' : edge;
-    blk.style.borderTopLeftRadius = (!hasTop && !hasLeft) ? '4px' : '0';
-    blk.style.borderTopRightRadius = (!hasTop && !hasRight) ? '4px' : '0';
-    blk.style.borderBottomLeftRadius = (!hasBottom && !hasLeft) ? '4px' : '0';
-    blk.style.borderBottomRightRadius = (!hasBottom && !hasRight) ? '4px' : '0';
-    blk.style.boxShadow = hasBottom ? 'none' : '0 1px 3px rgba(0,0,0,0.4)';
     container.appendChild(blk);
-
-    // Separate, borderless fill patches bridge the gap toward internally
-    // adjacent cells, so the piece still looks fused — without the border
-    // ever leaving the cell's true footprint.
-    if(hasRight) patch(x+cellSize, y, gapSize, cellSize);
-    if(hasBottom) patch(x, y+cellSize, cellSize, gapSize);
-    if(hasRight && hasBottom && hasCellAt(cells, r+1, c+1)){
-      patch(x+cellSize, y+cellSize, gapSize, gapSize); // fills the small square where 4 cells meet
-    }
   });
   return container;
 }

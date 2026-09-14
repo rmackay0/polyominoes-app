@@ -1168,8 +1168,8 @@ function onDragEnd(e){
       const piece = { id, cells: drag.cells, color: drag.color, name: drag.name, anchorRow, anchorCol };
       placedPieces.push(piece);
       selectedId = id;
-      updatePendingPlacement(id);
       maybeExpandGrid(piece);
+      updatePendingPlacement(id);
     }
   } else if(drag.mode==='move'){
     const piece = placedPieces.find(p=>p.id===drag.sourceId);
@@ -1184,8 +1184,8 @@ function onDragEnd(e){
         pushUndo();
         piece.anchorRow = anchorRow;
         piece.anchorCol = anchorCol;
-        updatePendingPlacement(piece.id);
         maybeExpandGrid(piece);
+        updatePendingPlacement(piece.id);
         maybeContractGrid();
       }
     }
@@ -1228,8 +1228,8 @@ function transformSelected(fn){
   if(!piece) return;
   pushUndo();
   piece.cells = fn(piece.cells);
-  updatePendingPlacement(piece.id);
   maybeExpandGrid(piece);
+  updatePendingPlacement(piece.id);
   maybeContractGrid();
   renderAll();
 }
@@ -1252,8 +1252,8 @@ function duplicateSelected(){
   };
   placedPieces.push(newPiece);
   selectedId = newId;
-  updatePendingPlacement(newId);
   maybeExpandGrid(newPiece);
+  updatePendingPlacement(newId);
   renderAll();
 }
 
@@ -1315,8 +1315,8 @@ document.addEventListener('keydown', e=>{
       pushUndo();
       piece.anchorRow += dr;
       piece.anchorCol += dc;
-      updatePendingPlacement(piece.id);
       maybeExpandGrid(piece);
+      updatePendingPlacement(piece.id);
       maybeContractGrid();
       renderAll();
     }

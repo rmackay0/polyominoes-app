@@ -1356,8 +1356,25 @@ function updateSelToolbar(){
 ═══════════════════════════════════════════════ */
 const ARROW_DIRS = { ArrowUp:[-1,0], ArrowDown:[1,0], ArrowLeft:[0,-1], ArrowRight:[0,1] };
 
+// Clicking a piece, a board cell, or a tile is clicking a plain <div> — none
+// of that naturally moves keyboard focus away from whatever form control
+// (the grid-size input, the Infinite Grid checkbox, ...) was last focused.
+// Without this, keyboard focus can get "stuck" on a control indefinitely,
+// silently blocking every shortcut below since they check what's focused.
+document.addEventListener('pointerdown', e=>{
+  const onFormControl = e.target.closest && e.target.closest('input, button, select, textarea, label');
+  if(!onFormControl && document.activeElement && document.activeElement !== document.body){
+    document.activeElement.blur();
+  }
+}, true);
+
 document.addEventListener('keydown', e=>{
-  if(e.target.tagName==='INPUT') return;
+  // Only actual text-editable inputs need arrow keys/letters for their own
+  // native behavior. A checkbox (or a button) keeps keyboard focus after
+  // being clicked — a blanket "any INPUT" check silently ate every shortcut
+  // afterward until the page was reloaded (focus reset), which is exactly
+  // what made the Infinite Grid checkbox look broken.
+  if(e.target.matches && e.target.matches('input[type=text], input[type=number], input[type=color]')) return;
 
   if(e.key==='z' || e.key==='Z'){ e.preventDefault(); undo(); return; }
   if(!selectedId) return;

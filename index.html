@@ -363,7 +363,7 @@
   <div class="sidebar">
     <div class="row">
       Grid
-      <input type="number" id="grid-size-input" min="4" max="16" value="8">
+      <input type="number" id="grid-size-input" min="4" max="20" value="8">
       <button class="btn-mini" id="apply-grid-size">Apply</button>
     </div>
     <div class="row">
@@ -1435,7 +1435,7 @@ document.getElementById('apply-grid-size').addEventListener('click', ()=>{
   const input = document.getElementById('grid-size-input');
   let n = parseInt(input.value);
   if(isNaN(n)) return;
-  n = Math.max(4, Math.min(16, n));
+  n = Math.max(4, Math.min(20, n));
   input.value = n;
   if(placedPieces.length && !confirm('Changing grid size will clear the board. Continue?')) return;
   gridMinRow = 0; gridMaxRow = n-1; gridMinCol = 0; gridMaxCol = n-1;

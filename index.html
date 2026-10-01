@@ -581,18 +581,24 @@ function renderCheckerOverlay(){
   const overlay = document.getElementById('checker-overlay');
   overlay.innerHTML = '';
   if(!checkerboardEnabled || !onionSkinEnabled) return;
-  for(let r=gridMinRow; r<=gridMaxRow; r++){
-    for(let c=gridMinCol; c<=gridMaxCol; c++){
-      const cell = document.createElement('div');
-      cell.className = 'checker-overlay-cell';
-      cell.style.left = pxCol(c) + 'px';
-      cell.style.top = pxRow(r) + 'px';
-      cell.style.width = CELL + 'px';
-      cell.style.height = CELL + 'px';
-      cell.style.background = CHECKERBOARD_COLORS[patternIndexFor(r,c)];
-      overlay.appendChild(cell);
-    }
-  }
+  // Onion skin only matters where it's actually hiding something — draw it
+  // only over squares a piece currently covers, not the whole board.
+  const covered = new Set();
+  placedPieces.forEach(p=>p.cells.forEach(([r,c])=>{
+    const rr = p.anchorRow+r, cc = p.anchorCol+c;
+    if(rr>=gridMinRow && rr<=gridMaxRow && cc>=gridMinCol && cc<=gridMaxCol) covered.add(rr+','+cc);
+  }));
+  covered.forEach(key=>{
+    const [r,c] = key.split(',').map(Number);
+    const cell = document.createElement('div');
+    cell.className = 'checker-overlay-cell';
+    cell.style.left = pxCol(c) + 'px';
+    cell.style.top = pxRow(r) + 'px';
+    cell.style.width = CELL + 'px';
+    cell.style.height = CELL + 'px';
+    cell.style.background = CHECKERBOARD_COLORS[patternIndexFor(r,c)];
+    overlay.appendChild(cell);
+  });
 }
 
 function updateCheckerCounts(){
@@ -818,6 +824,7 @@ function updateHolesCount(){
   }));
   document.getElementById('holes-count').textContent = gridRows()*gridCols() - covered.size;
   updateCheckerCounts();
+  renderCheckerOverlay();
 }
 
 function pxPos(index){ return index*(CELL+GAP); }

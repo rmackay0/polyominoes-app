@@ -387,9 +387,11 @@
     <div class="row">
       Grid
       <input type="number" id="grid-size-input" min="4" max="20" value="8">
-      <button class="btn-mini" id="apply-grid-size">Apply</button>
     </div>
-    <div class="row" id="grid-size-error" style="display:none; color: var(--invalid-border); font-size:0.7rem;"></div>
+    <div class="row" id="grid-size-error" style="display:none; color: var(--invalid-border); font-size:0.7rem;">
+      <span id="grid-size-error-text"></span>
+      <button class="btn-mini" id="grid-error-accept" style="padding:3px 8px;">Accept</button>
+    </div>
     <div class="row">
       <label><input type="checkbox" id="infinite-grid-toggle"> Infinite Grid</label>
     </div>
@@ -1692,24 +1694,43 @@ function piecesFitInBounds(pieces, minR, maxR, minC, maxC){
     return rr>=minR && rr<=maxR && cc>=minC && cc<=maxC;
   }));
 }
-function setGridSizeError(msg){
-  const el = document.getElementById('grid-size-error');
-  el.textContent = msg || '';
-  el.style.display = msg ? 'block' : 'none';
+
+const gridSizeInputEl = document.getElementById('grid-size-input');
+const gridSizeErrorEl = document.getElementById('grid-size-error');
+
+function gridSizeErrorActive(){ return gridSizeErrorEl.style.display !== 'none'; }
+function showGridSizeError(msg){
+  document.getElementById('grid-size-error-text').textContent = msg;
+  gridSizeErrorEl.style.display = 'flex';
+}
+function clearGridSizeError(){
+  gridSizeErrorEl.style.display = 'none';
+  document.getElementById('grid-size-error-text').textContent = '';
+}
+// "Undo" for a rejected edit: drop the error and snap the input back to
+// whatever the grid's actual current size is, ready for another attempt.
+function dismissGridSizeError(){
+  clearGridSizeError();
+  gridSizeInputEl.value = Math.max(gridRows(), gridCols());
 }
 
-document.getElementById('apply-grid-size').addEventListener('click', ()=>{
-  const input = document.getElementById('grid-size-input');
-  let n = parseInt(input.value);
-  if(isNaN(n)){ setGridSizeError('Enter a number.'); return; }
-  n = Math.max(4, Math.min(20, n));
-  input.value = n;
-
-  if(placedPieces.length && !piecesFitInBounds(placedPieces, 0, n-1, 0, n-1)){
-    setGridSizeError(`Too small — existing pieces extend beyond a ${n}×${n} grid.`);
+// No more Apply button — any way the number changes (typing + blur/Enter,
+// arrow keys while focused, or the input's native spinner arrows) attempts
+// the resize immediately via this one handler.
+function attemptGridResize(){
+  if(infiniteGrid) return; // input is disabled in this mode anyway
+  const raw = gridSizeInputEl.value.trim();
+  const n = Number(raw);
+  if(raw === '' || !Number.isInteger(n) || n < 4 || n > 20){
+    showGridSizeError('Enter a whole number between 4 and 20.');
     return;
   }
-  setGridSizeError(null);
+  if(placedPieces.length && !piecesFitInBounds(placedPieces, 0, n-1, 0, n-1)){
+    showGridSizeError('Grid size too small for current piece arrangement.');
+    return;
+  }
+  clearGridSizeError();
+  if(n === gridRows() && n === gridCols()) return; // already this size, nothing to do
 
   // Existing pieces are preserved — resizing only changes the grid's outer
   // bounds, it doesn't touch placedPieces at all.
@@ -1719,7 +1740,22 @@ document.getElementById('apply-grid-size').addEventListener('click', ()=>{
   setupBoard();
   placedPieces.forEach(p=>updatePendingPlacement(p.id));
   renderAll();
+}
+
+gridSizeInputEl.addEventListener('change', attemptGridResize);
+gridSizeInputEl.addEventListener('keydown', e=>{
+  if(e.key !== 'Enter') return;
+  e.preventDefault();
+  // Enter means two different things depending on context, so it never
+  // fights with itself: dismiss a showing error, or otherwise commit.
+  if(gridSizeErrorActive()){ dismissGridSizeError(); return; }
+  attemptGridResize();
+  // Only blur on success ("confirm and move on"). If that attempt just
+  // raised a new error, the input must stay focused — otherwise a
+  // follow-up Enter press (meant to dismiss it) would land nowhere.
+  if(!gridSizeErrorActive()) gridSizeInputEl.blur();
 });
+document.getElementById('grid-error-accept').addEventListener('click', dismissGridSizeError);
 
 document.getElementById('clear-board-btn').addEventListener('click', ()=>{
   if(!placedPieces.length) return;
@@ -1735,8 +1771,9 @@ document.getElementById('infinite-grid-toggle').addEventListener('change', funct
   infiniteGrid = this.checked;
   localStorage.setItem('poly_infiniteGrid', infiniteGrid);
   document.getElementById('grid-size-input').disabled = infiniteGrid;
-  document.getElementById('apply-grid-size').disabled = infiniteGrid;
+  clearGridSizeError();
   if(infiniteGrid) maybeContractGrid();
+  else document.getElementById('grid-size-input').value = Math.max(gridRows(), gridCols());
 });
 
 document.getElementById('checkerboard-toggle').addEventListener('change', function(){
@@ -1926,7 +1963,6 @@ document.getElementById('checkerboard-toggle').checked = checkerboardEnabled;
 document.getElementById('onion-skin-toggle').checked = onionSkinEnabled;
 document.getElementById('onion-skin-toggle').disabled = !checkerboardEnabled;
 document.getElementById('grid-size-input').disabled = infiniteGrid;
-document.getElementById('apply-grid-size').disabled = infiniteGrid;
 setupBoard();
 renderStandardTiles();
 renderPentominoTiles();

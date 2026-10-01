@@ -241,6 +241,15 @@
   }
   .error-toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+  #marquee-box {
+    position: fixed;
+    display: none;
+    border: 1px dashed rgba(255,255,255,0.85);
+    background: rgba(255,255,255,0.08);
+    pointer-events: none;
+    z-index: 1500;
+  }
+
   #board-outer {
     position: relative;
     background: #1c1714;
@@ -277,7 +286,7 @@
   }
   .placed-piece .piece-svg { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4)); }
   .placed-piece.selected .piece-svg {
-    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4)) drop-shadow(0 0 3px rgba(255,255,255,0.5));
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4)) drop-shadow(0 0 4px rgba(255,255,255,1)) drop-shadow(0 0 4px rgba(255,255,255,1));
   }
   /* Comes after .selected so it wins when a piece is both selected and
      invalid — which is the common case, since the piece needing fixing
@@ -347,6 +356,7 @@
 
 <div class="topbar"><span class="logo">&#9670;</span><span class="title">Polyominoes</span></div>
 <div id="error-toast" class="error-toast"></div>
+<div id="marquee-box"></div>
 
 <div class="main-row">
 
@@ -379,6 +389,7 @@
       <input type="number" id="grid-size-input" min="4" max="20" value="8">
       <button class="btn-mini" id="apply-grid-size">Apply</button>
     </div>
+    <div class="row" id="grid-size-error" style="display:none; color: var(--invalid-border); font-size:0.7rem;"></div>
     <div class="row">
       <label><input type="checkbox" id="infinite-grid-toggle"> Infinite Grid</label>
     </div>
@@ -1346,6 +1357,11 @@ function onDragEnd(e){
       maybeContractGrid();
     }
   }
+  // updateDrag() above re-adds hl-valid/hl-invalid as a side effect of
+  // computing the final anchor — clear them again now that the drop is
+  // actually committed, or they'd linger on the board forever (nothing
+  // else ever touches .board-cell classes outside an active drag).
+  clearHighlights();
   drag = null;
   renderAll();
 }
@@ -1595,25 +1611,113 @@ piecesLayerEl.addEventListener('contextmenu', e=>{
   maybeContractGrid();
   renderAll();
 });
+/* ═══════════════════════════════════════════════
+   BOX (MARQUEE) SELECTION
+   Click-drag starting on empty board space draws a selection rectangle;
+   any piece whose on-screen CENTER falls inside it when released gets
+   selected (added to the existing selection if shift was held at the
+   start, otherwise replacing it) — then arrow keys / rotate / flip work
+   on the whole group exactly as with a shift-click-built selection.
+═══════════════════════════════════════════════ */
+let marquee = null; // {startX, startY, additive, moved}
+const marqueeBoxEl = document.getElementById('marquee-box');
+
 boardEl.addEventListener('pointerdown', e=>{
-  if(e.target.classList.contains('board-cell') && !e.shiftKey) deselect();
+  if(!e.target.classList.contains('board-cell')) return;
+  if(isLocked()){ showBlockedMessage(); return; }
+  e.preventDefault();
+  marquee = { startX: e.clientX, startY: e.clientY, additive: e.shiftKey, moved: false };
+  marqueeBoxEl.style.left = e.clientX + 'px';
+  marqueeBoxEl.style.top = e.clientY + 'px';
+  marqueeBoxEl.style.width = '0px';
+  marqueeBoxEl.style.height = '0px';
+  marqueeBoxEl.style.display = 'block';
+  window.addEventListener('pointermove', onMarqueeMove);
+  window.addEventListener('pointerup', onMarqueeEnd);
 });
+
+function onMarqueeMove(e){
+  if(!marquee) return;
+  if(Math.abs(e.clientX-marquee.startX)>3 || Math.abs(e.clientY-marquee.startY)>3) marquee.moved = true;
+  const x0 = Math.min(marquee.startX, e.clientX), x1 = Math.max(marquee.startX, e.clientX);
+  const y0 = Math.min(marquee.startY, e.clientY), y1 = Math.max(marquee.startY, e.clientY);
+  marqueeBoxEl.style.left = x0 + 'px';
+  marqueeBoxEl.style.top = y0 + 'px';
+  marqueeBoxEl.style.width = (x1-x0) + 'px';
+  marqueeBoxEl.style.height = (y1-y0) + 'px';
+}
+
+function onMarqueeEnd(e){
+  window.removeEventListener('pointermove', onMarqueeMove);
+  window.removeEventListener('pointerup', onMarqueeEnd);
+  if(!marquee) return;
+  marqueeBoxEl.style.display = 'none';
+
+  if(!marquee.moved){
+    // A plain click on empty space (no real drag) — the old simple
+    // deselect-on-empty-click behavior. Shift+click on empty space stays
+    // a no-op, same as before.
+    if(!marquee.additive) deselect();
+    marquee = null;
+    return;
+  }
+
+  const x0 = Math.min(marquee.startX, e.clientX), x1 = Math.max(marquee.startX, e.clientX);
+  const y0 = Math.min(marquee.startY, e.clientY), y1 = Math.max(marquee.startY, e.clientY);
+  const additive = marquee.additive;
+  marquee = null;
+
+  const hitIds = [];
+  placedPieces.forEach(p=>{
+    const wrapEl = piecesLayerEl.querySelector(`[data-id="${p.id}"]`);
+    if(!wrapEl) return;
+    const r = wrapEl.getBoundingClientRect();
+    const cx = r.left + r.width/2, cy = r.top + r.height/2;
+    if(cx>=x0 && cx<=x1 && cy>=y0 && cy<=y1) hitIds.push(p.id);
+  });
+  if(!additive) selectedIds.clear();
+  hitIds.forEach(id=>selectedIds.add(id));
+  renderAll();
+}
 
 /* ═══════════════════════════════════════════════
    GRID SIZE / CLEAR BOARD
 ═══════════════════════════════════════════════ */
+function piecesFitInBounds(pieces, minR, maxR, minC, maxC){
+  // Only checks each piece against the proposed outer bounds — overlap
+  // *between* pieces is a separate, already-allowed concern (shown with
+  // the red invalid tint), not a reason to block a resize.
+  return pieces.every(p => p.cells.every(([r,c]) => {
+    const rr = p.anchorRow+r, cc = p.anchorCol+c;
+    return rr>=minR && rr<=maxR && cc>=minC && cc<=maxC;
+  }));
+}
+function setGridSizeError(msg){
+  const el = document.getElementById('grid-size-error');
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+}
+
 document.getElementById('apply-grid-size').addEventListener('click', ()=>{
   const input = document.getElementById('grid-size-input');
   let n = parseInt(input.value);
-  if(isNaN(n)) return;
+  if(isNaN(n)){ setGridSizeError('Enter a number.'); return; }
   n = Math.max(4, Math.min(20, n));
   input.value = n;
-  if(placedPieces.length && !confirm('Changing grid size will clear the board. Continue?')) return;
+
+  if(placedPieces.length && !piecesFitInBounds(placedPieces, 0, n-1, 0, n-1)){
+    setGridSizeError(`Too small — existing pieces extend beyond a ${n}×${n} grid.`);
+    return;
+  }
+  setGridSizeError(null);
+
+  // Existing pieces are preserved — resizing only changes the grid's outer
+  // bounds, it doesn't touch placedPieces at all.
+  pushUndo();
   gridMinRow = 0; gridMaxRow = n-1; gridMinCol = 0; gridMaxCol = n-1;
   saveGridBounds();
-  placedPieces = [];
-  selectedIds.clear(); pendingPlacementIds.clear();
   setupBoard();
+  placedPieces.forEach(p=>updatePendingPlacement(p.id));
   renderAll();
 });
 

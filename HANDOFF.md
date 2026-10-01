@@ -112,9 +112,9 @@ GRID SIZE, TRAY CONTROLS, CUSTOM PIECE EDITOR, INIT).
   at 0.3, went to 0.375, then to 0.5 at the user's explicit request to go
   "all the way to .5").
 - **Selected-piece glow**: `.placed-piece.selected .piece-svg` uses a
-  doubled, full-opacity white `drop-shadow` plus a dark drop-shadow for
-  depth. This value has been tuned back and forth — see "Selection glow
-  history" below before changing it again.
+  single white `drop-shadow` (2px blur, 75% opacity) plus a dark
+  drop-shadow for depth. This value has been tuned back and forth — see
+  "Selection glow history" below before changing it again.
 - **Undo**: single global stack (`pushUndo`/`undo`), snapshots
   `placedPieces` + selection + grid bounds as JSON. Called before every
   mutating action.
@@ -143,13 +143,36 @@ bright/too dim" feedback. Known values, in chronological order:
    blur, full opacity — `drop-shadow(0 0 4px rgba(255,255,255,1))` ×2. User
    feedback: "dramatically less obvious... go back to the original and then
    turn it up just a little." Reverted.
-4. **Current**: `drop-shadow(0 1px 2px rgba(0,0,0,0.4)) drop-shadow(0 0
-   3.5px #fff) drop-shadow(0 0 3.5px #fff);` — the original doubled/full-
-   opacity look, with only the blur radius nudged from 3px to 3.5px as the
-   "turn it up just a little" step. If this still reads as too strong or
-   too subtle, adjust the blur radius in small increments (0.5px steps)
-   rather than opacity or layer count, since those are what overshot last
-   time.
+4. **3.5px doubled/full-opacity retry**: `drop-shadow(0 1px 2px
+   rgba(0,0,0,0.4)) drop-shadow(0 0 3.5px #fff) drop-shadow(0 0 3.5px
+   #fff);`. This was committed and pushed, but a local editor autosave
+   reverted the working file back to the 4px version (#3) before the user
+   actually saw it in a browser — they reported "still far too dramatic,
+   looks unchanged," which was literally true. **Lesson**: after editing
+   this CSS, re-grep the file immediately before telling the user to look,
+   since this file is being actively edited in an IDE and can get reverted
+   out from under a change.
+5. **True original restored**: `drop-shadow(0 1px 2px rgba(0,0,0,0.4))
+   drop-shadow(0 0 3px #fff) drop-shadow(0 0 3px #fff);` (exact value from
+   #1). User still found this "very bright and noticeable" and asked for
+   something "very subtle" — i.e. the doubled/full-opacity white glow was
+   never actually subtle; the user's mental model of "the original" as
+   dim didn't match its real CSS value.
+6. **Subtle rewrite**: dropped the doubled-layer/full-opacity approach
+   entirely in favor of a single white shadow layer with reduced opacity —
+   `drop-shadow(0 1px 2px rgba(0,0,0,0.4)) drop-shadow(0 0 2px
+   rgba(255,255,255,0.6));` (2px blur, 60% opacity). Confirmed subtle
+   enough by the user.
+7. **Nudged up twice** from that subtle baseline, blur and opacity tuned
+   independently: 2px/0.6 → 3px/0.75 → **current: 2px/0.75** (blur brought
+   back down while keeping the higher opacity). **Current (final, pushed)
+   value**:
+   `drop-shadow(0 1px 2px rgba(0,0,0,0.4)) drop-shadow(0 0 2px
+   rgba(255,255,255,0.75));`
+   If asked to adjust again, tune blur and opacity as independent, small
+   (±0.25–0.5 opacity, ±1px blur) increments from this single-layer base —
+   do not go back to the doubled-layer/full-opacity style from #1/#3/#4,
+   since that was confirmed too strong across multiple rounds.
 
 ## Known issues / bugs already fixed this project (don't reintroduce these)
 

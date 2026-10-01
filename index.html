@@ -22,6 +22,8 @@
     --teal: #4f8a8b;
     --plum: #7d5a78;
     --edit-color: #5a7d8c;
+    --checker-0: #2e2622;
+    --checker-1: #5e4c3e;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
@@ -254,10 +256,19 @@
     border: 1px solid var(--panel-border);
     border-radius: 3px;
   }
+  /* Pattern classes (checkerboard today, more groups later) come before the
+     drag-highlight rules below so hl-valid/hl-invalid still win when both
+     apply to the same cell during a drag. */
+  .board-cell.pat0 { background: var(--checker-0); }
+  .board-cell.pat1 { background: var(--checker-1); }
   .board-cell.hl-valid { background: var(--valid-bg); border-color: var(--valid-border); }
   .board-cell.hl-invalid { background: var(--invalid-bg); border-color: var(--invalid-border); }
 
   #pieces-layer { position: absolute; inset: 10px; pointer-events: none; }
+  /* Sits above pieces-layer so the pattern shows through ("onion skin")
+     even over covered squares; never intercepts clicks/drags. */
+  #checker-overlay { position: absolute; inset: 10px; pointer-events: none; }
+  .checker-overlay-cell { position: absolute; opacity: 0.3; border-radius: 3px; }
 
   .placed-piece { position: absolute; }
   .placed-piece .blk {
@@ -347,8 +358,10 @@
     <div id="board-outer">
       <div id="board"></div>
       <div id="pieces-layer"></div>
+      <div id="checker-overlay"></div>
     </div>
     <div class="info-bar">Open: <b id="holes-count">64</b>/<span id="total-count">64</span></div>
+    <div class="info-bar" id="checker-counts" style="display:none;"></div>
     <button class="btn-trash" id="clear-board-btn">
       <svg width="12" height="12" viewBox="0 0 14 14" style="vertical-align:middle;margin-right:6px;" fill="none">
         <rect x="0" y="0" width="6" height="6" fill="currentColor"/>
@@ -357,7 +370,7 @@
         <rect x="8" y="8" width="6" height="6" fill="currentColor"/>
       </svg>Clear entire grid
     </button>
-    <p class="hint">Drag to place &bull; click to select &bull; arrows/R/T/D/Del/Z</p>
+    <p class="hint">Drag to place &bull; click to select (+shift for multiple) &bull; arrows/R/T/D/Del/Z</p>
   </div>
 
   <div class="sidebar">
@@ -368,6 +381,12 @@
     </div>
     <div class="row">
       <label><input type="checkbox" id="infinite-grid-toggle"> Infinite Grid</label>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="checkerboard-toggle"> Checkerboard</label>
+    </div>
+    <div class="row" style="padding-left:20px;">
+      <label><input type="checkbox" id="onion-skin-toggle" disabled> Onion skin overlay</label>
     </div>
 
     <div class="row tray-controls-row">
@@ -540,6 +559,59 @@ let infiniteGrid = localStorage.getItem('poly_infiniteGrid') === 'true';
 const INFINITE_MIN_DIM = 8;
 const EXPAND_BUFFER = 2;
 
+/* ═══════════════════════════════════════════════
+   CHECKERBOARD / CELL PATTERNS
+   Built as a generic "pattern index per cell" system rather than a
+   hardcoded 2-color checkerboard, so a future more intricate design is
+   just a different patternIndexFor() + a longer CHECKERBOARD_COLORS /
+   CHECKERBOARD_LABELS list — nothing else (rendering, counts, the onion
+   skin overlay) needs to change to support more than 2 groups.
+═══════════════════════════════════════════════ */
+const CHECKERBOARD_COLORS = ['var(--checker-0)', 'var(--checker-1)'];
+const CHECKERBOARD_LABELS = ['Black', 'White'];
+function patternIndexFor(r, c){
+  const n = CHECKERBOARD_COLORS.length;
+  return ((r + c) % n + n) % n; // double-mod: r/c can be negative in Infinite Grid mode
+}
+
+let checkerboardEnabled = localStorage.getItem('poly_checkerboard') === 'true';
+let onionSkinEnabled = checkerboardEnabled && localStorage.getItem('poly_onionSkin') === 'true';
+
+function renderCheckerOverlay(){
+  const overlay = document.getElementById('checker-overlay');
+  overlay.innerHTML = '';
+  if(!checkerboardEnabled || !onionSkinEnabled) return;
+  for(let r=gridMinRow; r<=gridMaxRow; r++){
+    for(let c=gridMinCol; c<=gridMaxCol; c++){
+      const cell = document.createElement('div');
+      cell.className = 'checker-overlay-cell';
+      cell.style.left = pxCol(c) + 'px';
+      cell.style.top = pxRow(r) + 'px';
+      cell.style.width = CELL + 'px';
+      cell.style.height = CELL + 'px';
+      cell.style.background = CHECKERBOARD_COLORS[patternIndexFor(r,c)];
+      overlay.appendChild(cell);
+    }
+  }
+}
+
+function updateCheckerCounts(){
+  const el = document.getElementById('checker-counts');
+  if(!checkerboardEnabled){ el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const counts = new Array(CHECKERBOARD_COLORS.length).fill(0);
+  const seen = new Set();
+  placedPieces.forEach(p=>p.cells.forEach(([r,c])=>{
+    const rr = p.anchorRow+r, cc = p.anchorCol+c;
+    if(rr<gridMinRow || rr>gridMaxRow || cc<gridMinCol || cc>gridMaxCol) return;
+    const key = rr+','+cc;
+    if(seen.has(key)) return; // overlapping pieces shouldn't double-count a square
+    seen.add(key);
+    counts[patternIndexFor(rr,cc)]++;
+  }));
+  el.innerHTML = CHECKERBOARD_LABELS.map((label,i)=>`${label}: <b>${counts[i]||0}</b>`).join(' &nbsp; ');
+}
+
 // Grow the grid to keep `piece` comfortably inside it — only on the side(s)
 // it's actually near, so pushing a piece toward the right edge only grows
 // the right side (an existing piece's stored coordinates never change).
@@ -609,20 +681,29 @@ let customIdCounter = customPieces.reduce((m,p)=>{
 
 let placedPieces = [];   // {id, cells, color, name, anchorRow, anchorCol}
 let placedIdCounter = 1;
-let selectedId = null;
 
-// The one piece (if any) currently sitting invalid — overlapping another
-// piece, or extending past the grid edge in fixed-size mode. While set,
-// selection is locked to this piece: you can keep moving/rotating/flipping/
-// duplicating/deleting it, but selecting or dragging anything else is
-// blocked (with an on-screen message) until it's valid again or removed.
-let pendingPlacementId = null;
+// Multiple pieces can be selected at once (shift-click to add/remove one).
+// A single click still replaces the whole selection with just that piece.
+let selectedIds = new Set();
+
+// Any piece currently sitting invalid — overlapping another piece, or
+// extending past the grid edge in fixed-size mode. While non-empty,
+// selection is locked: you can keep moving/rotating/flipping/deleting
+// pieces that are pending OR already part of the current selection, but
+// selecting or dragging anything outside that is blocked (with an
+// on-screen message) until everything pending is valid again or removed.
+let pendingPlacementIds = new Set();
+
+function isLocked(){ return pendingPlacementIds.size > 0; }
+function canInteractWith(id){
+  return !isLocked() || pendingPlacementIds.has(id) || selectedIds.has(id);
+}
 
 function updatePendingPlacement(pieceId){
   const piece = placedPieces.find(p=>p.id===pieceId);
   const valid = piece && isValidPlacement(piece.cells, piece.anchorRow, piece.anchorCol, piece.id);
-  if(!valid) pendingPlacementId = pieceId;
-  else if(pendingPlacementId === pieceId) pendingPlacementId = null;
+  if(!valid) pendingPlacementIds.add(pieceId);
+  else pendingPlacementIds.delete(pieceId);
 }
 
 let blockedMsgTimer = null;
@@ -637,15 +718,20 @@ function showBlockedMessage(){
 let undoStack = [];
 const UNDO_LIMIT = 50;
 function pushUndo(){
-  undoStack.push(JSON.stringify({placedPieces, selectedId, pendingPlacementId, gridMinRow, gridMaxRow, gridMinCol, gridMaxCol}));
+  undoStack.push(JSON.stringify({
+    placedPieces,
+    selectedIds: [...selectedIds],
+    pendingPlacementIds: [...pendingPlacementIds],
+    gridMinRow, gridMaxRow, gridMinCol, gridMaxCol
+  }));
   if(undoStack.length > UNDO_LIMIT) undoStack.shift();
 }
 function undo(){
   if(!undoStack.length) return;
   const snap = JSON.parse(undoStack.pop());
   placedPieces = snap.placedPieces;
-  selectedId = snap.selectedId;
-  pendingPlacementId = snap.pendingPlacementId;
+  selectedIds = new Set(snap.selectedIds);
+  pendingPlacementIds = new Set(snap.pendingPlacementIds);
   gridMinRow = snap.gridMinRow; gridMaxRow = snap.gridMaxRow;
   gridMinCol = snap.gridMinCol; gridMaxCol = snap.gridMaxCol;
   setupBoard();
@@ -668,14 +754,17 @@ function setupBoard(){
   boardEl.innerHTML = '';
   for(let i=0;i<rows;i++){
     for(let j=0;j<cols;j++){
+      const r = gridMinRow + i, c = gridMinCol + j;
       const cell = document.createElement('div');
-      cell.className = 'board-cell';
-      cell.dataset.r = gridMinRow + i;
-      cell.dataset.c = gridMinCol + j;
+      cell.className = 'board-cell' + (checkerboardEnabled ? ' pat'+patternIndexFor(r,c) : '');
+      cell.dataset.r = r;
+      cell.dataset.c = c;
       boardEl.appendChild(cell);
     }
   }
   document.getElementById('total-count').textContent = rows*cols;
+  renderCheckerOverlay();
+  updateCheckerCounts();
 }
 
 function occupied(excludeId){
@@ -728,6 +817,7 @@ function updateHolesCount(){
     if(rr>=gridMinRow && rr<=gridMaxRow && cc>=gridMinCol && cc<=gridMaxCol) covered.add(rr+','+cc);
   }));
   document.getElementById('holes-count').textContent = gridRows()*gridCols() - covered.size;
+  updateCheckerCounts();
 }
 
 function pxPos(index){ return index*(CELL+GAP); }
@@ -911,8 +1001,8 @@ function renderPlacedPieces(){
   placedPieces.forEach(p=>{
     const wrap = document.createElement('div');
     wrap.className = 'placed-piece'
-      + (p.id===selectedId ? ' selected' : '')
-      + (p.id===pendingPlacementId ? ' invalid' : '');
+      + (selectedIds.has(p.id) ? ' selected' : '')
+      + (pendingPlacementIds.has(p.id) ? ' invalid' : '');
     wrap.style.left = pxCol(p.anchorCol) + 'px';
     wrap.style.top = pxRow(p.anchorRow) + 'px';
     wrap.dataset.id = p.id;
@@ -1100,7 +1190,7 @@ function makeGhost(cells, color){
 }
 
 function startDragFromTile(e, cells, color, name){
-  if(pendingPlacementId){ showBlockedMessage(); return; }
+  if(isLocked()){ showBlockedMessage(); return; }
   e.preventDefault();
   const {rows, cols} = bounds(cells);
   const grabDR = Math.floor((rows-1)/2);
@@ -1213,8 +1303,8 @@ function onDragEnd(e){
     if(drag.mode==='move' && drag.moved){
       pushUndo();
       placedPieces = placedPieces.filter(p=>p.id!==drag.sourceId);
-      if(pendingPlacementId===drag.sourceId) pendingPlacementId = null;
-      if(selectedId===drag.sourceId) selectedId = null;
+      pendingPlacementIds.delete(drag.sourceId);
+      selectedIds.delete(drag.sourceId);
       maybeContractGrid();
     }
     drag = null;
@@ -1233,7 +1323,8 @@ function onDragEnd(e){
       const id = 'p'+(placedIdCounter++);
       const piece = { id, cells: drag.cells, color: drag.color, name: drag.name, anchorRow, anchorCol };
       placedPieces.push(piece);
-      selectedId = id;
+      selectedIds.clear();
+      selectedIds.add(id);
       maybeExpandGrid(piece);
       updatePendingPlacement(id);
     }
@@ -1256,38 +1347,89 @@ function onDragEnd(e){
    SELECTION / ROTATE / FLIP / DUPLICATE / DELETE
 ═══════════════════════════════════════════════ */
 function selectPiece(id){
-  if(pendingPlacementId && id !== pendingPlacementId){ showBlockedMessage(); return; }
-  selectedId = id;
+  if(isLocked() && !canInteractWith(id)){ showBlockedMessage(); return; }
+  selectedIds.clear();
+  selectedIds.add(id);
+  renderAll();
+}
+
+// Shift-click toggles one piece's membership in the selection without
+// touching the rest — this is how you build a multi-piece selection before
+// letting go of shift and using arrow keys / rotate / flip on all of them.
+function toggleSelectPiece(id){
+  if(isLocked() && !canInteractWith(id)){ showBlockedMessage(); return; }
+  if(selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
   renderAll();
 }
 
 function deselect(){
-  if(pendingPlacementId) return; // must resolve it before it's allowed to lose focus
-  selectedId = null;
+  if(isLocked()) return; // must resolve it before it's allowed to lose focus
+  selectedIds.clear();
   renderAll();
 }
 
 function deleteSelected(){
-  if(!selectedId) return;
+  if(selectedIds.size===0) return;
   pushUndo();
-  placedPieces = placedPieces.filter(p=>p.id!==selectedId);
-  if(pendingPlacementId===selectedId) pendingPlacementId = null;
-  selectedId = null;
+  const ids = new Set(selectedIds);
+  placedPieces = placedPieces.filter(p=>!ids.has(p.id));
+  ids.forEach(id=>{ pendingPlacementIds.delete(id); selectedIds.delete(id); });
   maybeContractGrid();
   renderAll();
 }
 
-// Rotate/flip always apply in place, at the piece's current anchor — never
-// auto-relocated to find a fit. If that leaves it invalid, it just stays
-// there tinted red until moved (arrow keys or drag) into a valid spot.
+// Rotate/flip always apply in place — never auto-relocated to find a fit.
+// If that leaves a piece invalid, it just stays there tinted red until
+// moved (arrow keys or drag) into a valid spot.
+//
+// With more than one piece selected, this rotates/flips the WHOLE
+// selection as one rigid shape: each piece's own orientation transforms
+// exactly like the single-piece case, AND its position moves around the
+// group's shared bounding box, using the same per-cell transform logic
+// (rotateCells/flipCells) a lone piece would use — just applied to the
+// group's frame instead of one piece's own cells.
 function transformSelected(fn){
-  if(!selectedId) return;
-  const piece = placedPieces.find(p=>p.id===selectedId);
-  if(!piece) return;
+  if(selectedIds.size===0) return;
+  const pieces = [...selectedIds].map(id=>placedPieces.find(p=>p.id===id)).filter(Boolean);
+  if(pieces.length===0) return;
+
+  if(pieces.length===1){
+    const piece = pieces[0];
+    pushUndo();
+    piece.cells = fn(piece.cells);
+    maybeExpandGrid(piece);
+    updatePendingPlacement(piece.id);
+    maybeContractGrid();
+    renderAll();
+    return;
+  }
+
   pushUndo();
-  piece.cells = fn(piece.cells);
-  maybeExpandGrid(piece);
-  updatePendingPlacement(piece.id);
+  let minR=Infinity, minC=Infinity, maxR=-Infinity, maxC=-Infinity;
+  pieces.forEach(p=>{
+    const {rows,cols} = bounds(p.cells);
+    minR = Math.min(minR, p.anchorRow); minC = Math.min(minC, p.anchorCol);
+    maxR = Math.max(maxR, p.anchorRow+rows-1); maxC = Math.max(maxC, p.anchorCol+cols-1);
+  });
+  const groupRows = maxR-minR+1, groupCols = maxC-minC+1;
+  const isRotate = (fn === rotateCells);
+  pieces.forEach(p=>{
+    const {rows:pr, cols:pc} = bounds(p.cells);
+    const localR = p.anchorRow - minR, localC = p.anchorCol - minC;
+    // Transform the piece's own bounding-box corners within the group's
+    // frame using the exact same point rule rotateCells/flipCells uses,
+    // then the new top-left corner is just the min of those — this works
+    // generically for any such transform without hand-deriving a separate
+    // anchor formula per transform type.
+    const corners = [[localR,localC],[localR,localC+pc-1],[localR+pr-1,localC],[localR+pr-1,localC+pc-1]];
+    const transformed = corners.map(([r,c]) => isRotate ? [c, groupRows-1-r] : [r, groupCols-1-c]);
+    const newLocalR = Math.min(...transformed.map(t=>t[0]));
+    const newLocalC = Math.min(...transformed.map(t=>t[1]));
+    p.cells = fn(p.cells);
+    p.anchorRow = minR + newLocalR;
+    p.anchorCol = minC + newLocalC;
+  });
+  pieces.forEach(p=>{ maybeExpandGrid(p); updatePendingPlacement(p.id); });
   maybeContractGrid();
   renderAll();
 }
@@ -1295,10 +1437,12 @@ function transformSelected(fn){
 // Auto-placement (finding the nearest open spot) happens ONLY here, for
 // duplicate — never for rotate/flip/arrow moves. If there's no open spot,
 // the copy lands directly on top of the original (allowed, since overlap is
-// permitted) and becomes the piece that needs fixing.
+// permitted) and becomes the piece that needs fixing. Only works on a
+// single selected piece — duplicating a multi-piece group isn't supported.
 function duplicateSelected(){
-  if(!selectedId) return;
-  const source = placedPieces.find(p=>p.id===selectedId);
+  if(selectedIds.size !== 1) return;
+  const id = [...selectedIds][0];
+  const source = placedPieces.find(p=>p.id===id);
   if(!source) return;
   pushUndo();
   const anchor = findOpenAnchor(source.cells, source.anchorRow, source.anchorCol);
@@ -1309,7 +1453,8 @@ function duplicateSelected(){
     anchorCol: anchor ? anchor.col : source.anchorCol
   };
   placedPieces.push(newPiece);
-  selectedId = newId;
+  selectedIds.clear();
+  selectedIds.add(newId);
   maybeExpandGrid(newPiece);
   updatePendingPlacement(newId);
   renderAll();
@@ -1318,23 +1463,34 @@ function duplicateSelected(){
 function updateSelToolbar(){
   let bar = document.getElementById('sel-toolbar');
   if(bar) bar.remove();
-  if(!selectedId) return;
+  if(selectedIds.size===0) return;
 
-  const piece = placedPieces.find(p=>p.id===selectedId);
-  const wrapEl = piece && piecesLayerEl.querySelector(`[data-id="${piece.id}"]`);
-  if(!piece || !wrapEl) return;
-  const rect = wrapEl.getBoundingClientRect();
+  const pieces = [...selectedIds].map(id=>placedPieces.find(p=>p.id===id)).filter(Boolean);
+  if(pieces.length===0) return;
+
+  // Bounding box of the whole selection on screen (just one piece in the
+  // common case, several when multi-selected).
+  let left=Infinity, top=Infinity, bottom=-Infinity;
+  pieces.forEach(p=>{
+    const wrapEl = piecesLayerEl.querySelector(`[data-id="${p.id}"]`);
+    if(!wrapEl) return;
+    const r = wrapEl.getBoundingClientRect();
+    left = Math.min(left, r.left);
+    top = Math.min(top, r.top);
+    bottom = Math.max(bottom, r.bottom);
+  });
+  if(!isFinite(left)) return;
 
   bar = document.createElement('div');
   bar.className = 'sel-toolbar';
   bar.id = 'sel-toolbar';
-  bar.style.left = rect.left + 'px';
-  // Prefer placing the toolbar above the piece, but flip below it when
-  // there isn't enough headroom (e.g. a piece sitting right under the
-  // trash zone) so it never overlaps other UI.
+  bar.style.left = left + 'px';
+  // Prefer placing the toolbar above the selection, but flip below it when
+  // there isn't enough headroom (e.g. sitting right under the trash zone)
+  // so it never overlaps other UI.
   const controlsRect = trashZoneEl.getBoundingClientRect();
-  const wouldOverlapControls = (rect.top - 34) < controlsRect.bottom + 4;
-  bar.style.top = (wouldOverlapControls ? rect.bottom + 6 : rect.top - 34) + 'px';
+  const wouldOverlapControls = (top - 34) < controlsRect.bottom + 4;
+  bar.style.top = (wouldOverlapControls ? bottom + 6 : top - 34) + 'px';
 
   const mk = (label, title, fn, cls)=>{
     const b = document.createElement('button');
@@ -1346,7 +1502,7 @@ function updateSelToolbar(){
   };
   bar.appendChild(mk('↻','Rotate (R)', ()=>transformSelected(rotateCells), 'btn-mini btn-rotate'));
   bar.appendChild(mk('⇆','Flip (T)', ()=>transformSelected(flipCells), 'btn-mini btn-flip'));
-  bar.appendChild(mk('⧉','Duplicate (D)', duplicateSelected));
+  if(pieces.length===1) bar.appendChild(mk('⧉','Duplicate (D)', duplicateSelected));
   bar.appendChild(mk('✕','Delete (Del)', deleteSelected, 'btn-trash'));
   document.body.appendChild(bar);
 }
@@ -1377,21 +1533,21 @@ document.addEventListener('keydown', e=>{
   if(e.target.matches && e.target.matches('input[type=text], input[type=number], input[type=color]')) return;
 
   if(e.key==='z' || e.key==='Z'){ e.preventDefault(); undo(); return; }
-  if(!selectedId) return;
+  if(selectedIds.size===0) return;
 
-  // Arrow keys always move the piece, even into an invalid position — no
-  // fit check, no auto-placement. That's the point: this is how you rescue
-  // a piece that rotate/duplicate left sitting somewhere invalid.
+  // Arrow keys always move every selected piece together, even into an
+  // invalid position — no fit check, no auto-placement. That's the point:
+  // this is how you rescue a piece that rotate/duplicate left sitting
+  // somewhere invalid, and how a multi-piece selection (shift-click to
+  // build it) moves as one unit once you let go of shift.
   if(ARROW_DIRS[e.key]){
     e.preventDefault();
-    const piece = placedPieces.find(p=>p.id===selectedId);
-    if(piece){
-      const [dr,dc] = ARROW_DIRS[e.key];
+    const [dr,dc] = ARROW_DIRS[e.key];
+    const pieces = [...selectedIds].map(id=>placedPieces.find(p=>p.id===id)).filter(Boolean);
+    if(pieces.length){
       pushUndo();
-      piece.anchorRow += dr;
-      piece.anchorCol += dc;
-      maybeExpandGrid(piece);
-      updatePendingPlacement(piece.id);
+      pieces.forEach(p=>{ p.anchorRow += dr; p.anchorCol += dc; });
+      pieces.forEach(p=>{ maybeExpandGrid(p); updatePendingPlacement(p.id); });
       maybeContractGrid();
       renderAll();
     }
@@ -1408,7 +1564,15 @@ piecesLayerEl.addEventListener('pointerdown', e=>{
   if(!wrapEl) return;
   const piece = placedPieces.find(p=>p.id===wrapEl.dataset.id);
   if(!piece) return;
-  if(pendingPlacementId && piece.id !== pendingPlacementId){ showBlockedMessage(); return; }
+  if(isLocked() && !canInteractWith(piece.id)){ showBlockedMessage(); return; }
+  // Shift-click toggles this piece into/out of the selection and doesn't
+  // start a drag — that's a separate gesture from moving pieces around.
+  if(e.shiftKey){
+    e.preventDefault();
+    e.stopPropagation();
+    toggleSelectPiece(piece.id);
+    return;
+  }
   startDragFromPlaced(e, piece);
 });
 piecesLayerEl.addEventListener('contextmenu', e=>{
@@ -1416,16 +1580,16 @@ piecesLayerEl.addEventListener('contextmenu', e=>{
   if(!wrapEl) return;
   e.preventDefault();
   const id = wrapEl.dataset.id;
-  if(pendingPlacementId && id !== pendingPlacementId){ showBlockedMessage(); return; }
+  if(isLocked() && !canInteractWith(id)){ showBlockedMessage(); return; }
   pushUndo();
   placedPieces = placedPieces.filter(p=>p.id!==id);
-  if(selectedId===id) selectedId = null;
-  if(pendingPlacementId===id) pendingPlacementId = null;
+  selectedIds.delete(id);
+  pendingPlacementIds.delete(id);
   maybeContractGrid();
   renderAll();
 });
 boardEl.addEventListener('pointerdown', e=>{
-  if(e.target.classList.contains('board-cell')) deselect();
+  if(e.target.classList.contains('board-cell') && !e.shiftKey) deselect();
 });
 
 /* ═══════════════════════════════════════════════
@@ -1441,7 +1605,7 @@ document.getElementById('apply-grid-size').addEventListener('click', ()=>{
   gridMinRow = 0; gridMaxRow = n-1; gridMinCol = 0; gridMaxCol = n-1;
   saveGridBounds();
   placedPieces = [];
-  selectedId = null; pendingPlacementId = null;
+  selectedIds.clear(); pendingPlacementIds.clear();
   setupBoard();
   renderAll();
 });
@@ -1451,7 +1615,7 @@ document.getElementById('clear-board-btn').addEventListener('click', ()=>{
   if(!confirm('Clear all pieces from the board?')) return;
   pushUndo();
   placedPieces = [];
-  selectedId = null; pendingPlacementId = null;
+  selectedIds.clear(); pendingPlacementIds.clear();
   maybeContractGrid();
   renderAll();
 });
@@ -1462,6 +1626,24 @@ document.getElementById('infinite-grid-toggle').addEventListener('change', funct
   document.getElementById('grid-size-input').disabled = infiniteGrid;
   document.getElementById('apply-grid-size').disabled = infiniteGrid;
   if(infiniteGrid) maybeContractGrid();
+});
+
+document.getElementById('checkerboard-toggle').addEventListener('change', function(){
+  checkerboardEnabled = this.checked;
+  localStorage.setItem('poly_checkerboard', checkerboardEnabled);
+  const onionToggle = document.getElementById('onion-skin-toggle');
+  onionToggle.disabled = !checkerboardEnabled;
+  if(!checkerboardEnabled){
+    onionSkinEnabled = false;
+    onionToggle.checked = false;
+    localStorage.setItem('poly_onionSkin', false);
+  }
+  setupBoard();
+});
+document.getElementById('onion-skin-toggle').addEventListener('change', function(){
+  onionSkinEnabled = this.checked && checkerboardEnabled;
+  localStorage.setItem('poly_onionSkin', onionSkinEnabled);
+  renderCheckerOverlay();
 });
 
 /* ═══════════════════════════════════════════════
@@ -1629,6 +1811,9 @@ document.getElementById('editor-save').addEventListener('click', ()=>{
 ═══════════════════════════════════════════════ */
 document.getElementById('grid-size-input').value = Math.max(gridRows(), gridCols());
 document.getElementById('infinite-grid-toggle').checked = infiniteGrid;
+document.getElementById('checkerboard-toggle').checked = checkerboardEnabled;
+document.getElementById('onion-skin-toggle').checked = onionSkinEnabled;
+document.getElementById('onion-skin-toggle').disabled = !checkerboardEnabled;
 document.getElementById('grid-size-input').disabled = infiniteGrid;
 document.getElementById('apply-grid-size').disabled = infiniteGrid;
 setupBoard();

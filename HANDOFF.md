@@ -90,19 +90,48 @@ GRID SIZE, TRAY CONTROLS, CUSTOM PIECE EDITOR, INIT).
   using the same point-rule that `rotateCells`/`flipCells` use for single
   pieces (verified via a 360°-round-trip self-test). Single-piece selection
   still goes through the original, simpler single-piece path.
+- **Group drag**: starting a mouse drag on any piece that's already part of
+  a multi-selection (built via shift-click or marquee) moves the whole
+  group together, by the same delta, exactly like arrow-key movement does —
+  it does **not** collapse the selection down to just the piece you grabbed.
+  `startDragFromPlaced` captures each selected piece's starting anchor in
+  `drag.groupStart`; `onDragEnd` applies the dragged piece's final delta to
+  all of them. Starting a drag on a piece that *isn't* part of a current
+  multi-selection still behaves as a plain single-piece drag/select, as
+  before. The floating rotate/flip/duplicate/delete toolbar is explicitly
+  hidden for the whole duration of any drag (new piece or move) —
+  `updateSelToolbar()` bails out early whenever the global `drag` variable
+  is set, and both `startDragFromTile`/`startDragFromPlaced` call it
+  immediately after setting `drag` so it disappears right away rather than
+  waiting for the next `renderAll()` (which doesn't happen again until the
+  drag ends).
 - **Trash zone**: dragging a piece onto `#trash-zone` deletes it
   (`isOverTrashZone(clientX, clientY)`). This **replaced** an earlier
   "drag off the edge of the grid to delete" mechanic, which was removed
   because it conflicted with Infinite Grid's edge-expansion gesture (same
-  drag motion meant two different, conflicting things).
-- **Checkerboard overlay**: `checkerboardEnabled` toggle colors the grid
-  with `CHECKERBOARD_COLORS` (currently 2 colors, `['var(--checker-0)',
-  'var(--checker-1)']` / labels `['Black','White']`), driven by a generic
-  `patternIndexFor(r, c)` function — deliberately written to generalize
-  beyond simple 2-color checkering for future, more intricate pattern
-  designs (explicit user request). `updateCheckerCounts()` (called from
-  `updateHolesCount()`) shows how many black/white squares are currently
-  covered by placed pieces.
+  drag motion meant two different, conflicting things). Note: dragging one
+  piece of a multi-selection to the trash only deletes that one piece, not
+  the whole group — intentional, since the UI only ever shows that one
+  piece's ghost heading toward the trash.
+- **Checkerboard / color scheme overlay**: `checkerboardEnabled` toggle
+  colors the grid using one of three schemes in the `COLOR_SCHEMES`
+  registry — `checkerboard` ((r+c) mod 2), `stripes2` (r mod 2), `stripes3`
+  (r mod 3) — picked via the `#color-scheme-select` dropdown (only enabled
+  when the checkerboard toggle is on). Each scheme supplies its own
+  `colors`/`labels`/`indexFor`; `patternIndexFor(r,c)` just forwards to
+  `currentScheme().indexFor(r,c)`, so rendering, the onion skin overlay and
+  the count display all automatically follow whichever scheme is active.
+  Persisted to `localStorage` as `poly_colorScheme`. These three were
+  chosen out of a ~10-scheme catalog in a coloring-theory reference
+  document (see "Checkerboard scheme scope" below) — the rest were
+  explicitly descoped as not applicable to this app.
+  `updateCheckerCounts()` (called from `updateHolesCount()`) shows two
+  things: the whole board's **uncovered/remaining** cells by color (always
+  shown whenever checkerboard mode is on), and, only while at least one
+  piece is selected, a second "Selected: ..." line showing **covered**
+  cells by color for just the selected pieces. These are deliberately
+  different statistics (remaining vs. covered) — see that section before
+  changing either one.
 - **Onion skin overlay**: `onionSkinEnabled` toggle shows a semi-transparent
   checkerboard pattern over the board (`renderCheckerOverlay()`), restricted
   to only the cells actually covered by a placed piece (not the whole
@@ -119,14 +148,38 @@ GRID SIZE, TRAY CONTROLS, CUSTOM PIECE EDITOR, INIT).
   `placedPieces` + selection + grid bounds as JSON. Called before every
   mutating action.
 - **Keyboard**: arrows move, R rotate, T/F flip, D duplicate, Del/Backspace
-  delete, Z undo. All operate on the current `selectedIds` (single or
-  multi). The global keydown guard is narrowed to only ignore keystrokes
-  when `e.target.matches('input[type=text], input[type=number],
-  input[type=color]')` — see Known issues for why this matters.
+  delete, Z undo, Escape deselects all. All operate on the current
+  `selectedIds` (single or multi). Escape is deselect rather than D because
+  D was already taken by Duplicate (flagged and confirmed with the user
+  rather than silently overloading D). The global keydown guard is narrowed
+  to only ignore keystrokes when `e.target.matches('input[type=text],
+  input[type=number], input[type=color]')` — see Known issues for why this
+  matters.
 - **Tray controls**: a rotation dial + flip toggle that transform pieces
   *as dragged from the tray* only (`applyTrayTransform`) — never touches
   already-placed pieces. Every tray tile also has its own persistent
   rotate/flip buttons (`saveOverrides`/`applyOverrides` to localStorage).
+
+## Checkerboard scheme scope (read before adding more colorings)
+
+A document titled "Grid Colorings for Pentomino Puzzles" (shared 2026-10-01)
+catalogs roughly 10 periodic colorings for pentomino-tiling math — checker,
+row/column stripes in 2 and 3 colors, several `(x+y) mod k` diagonals,
+four-color parity, 2×2-block checker, sparse dots — plus a validator/
+solver/printed-piece-generator spec built around them, written for a
+puzzle-*solving* app. This app has no solver, no exact-tiling concept, and
+no "does this board admit a tiling" question — it's a free-form drag-and-
+drop board. Asked explicitly which parts applied here, the user confirmed:
+**only the top 3 recommended-for-building-first schemes** (checkerboard,
+2-color stripes, 3-color stripes), as plain overlay/paint options, with
+none of the validator/solver/printed-piece machinery. That's what
+`COLOR_SCHEMES` implements. If asked to add more schemes from that document
+later, the remaining ~7 (and their mirror variants) are still undone by
+design, not by oversight — re-confirm scope before adding them, since nothing
+in this app's architecture currently needs the multi-color-mix math the
+document's later sections describe (reachable-sum validators, signature
+vectors per piece, etc.) — none of that has a clear use here without a
+solver to attach it to.
 
 ## Selection glow history (read before touching this again)
 

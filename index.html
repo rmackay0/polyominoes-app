@@ -24,6 +24,7 @@
     --edit-color: #5a7d8c;
     --checker-0: #2e2622;
     --checker-1: #5e4c3e;
+    --checker-2: #8a6d52;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
@@ -78,6 +79,16 @@
   }
   .row input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
   .row label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .row select {
+    padding: 4px 6px;
+    border-radius: 6px;
+    border: 1px solid var(--panel-border);
+    background: var(--board-cell);
+    color: var(--text);
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .row select:disabled { cursor: not-allowed; opacity: 0.6; }
 
   .tray-controls-row { padding-bottom: 10px; border-bottom: 1px solid var(--panel-border); }
 
@@ -270,6 +281,7 @@
      apply to the same cell during a drag. */
   .board-cell.pat0 { background: var(--checker-0); }
   .board-cell.pat1 { background: var(--checker-1); }
+  .board-cell.pat2 { background: var(--checker-2); }
   .board-cell.hl-valid { background: var(--valid-bg); border-color: var(--valid-border); }
   .board-cell.hl-invalid { background: var(--invalid-bg); border-color: var(--invalid-border); }
 
@@ -319,6 +331,7 @@
 
   .info-bar { font-size: 0.76rem; color: var(--text-dim); text-align: center; }
   .info-bar b { color: var(--accent); }
+  .checker-counts-selected { margin-top: 2px; opacity: 0.8; }
 
   .hint { color: #7a6c5e; font-size: 0.68rem; text-align: center; }
 
@@ -380,7 +393,7 @@
         <rect x="8" y="8" width="6" height="6" fill="currentColor"/>
       </svg>Clear entire grid
     </button>
-    <p class="hint">Drag to place &bull; click to select (+shift for multiple) &bull; arrows/R/T/D/Del/Z</p>
+    <p class="hint">Drag to place &bull; click to select (+shift for multiple) &bull; arrows/R/T/D/Del/Z/Esc</p>
   </div>
 
   <div class="sidebar">
@@ -397,6 +410,13 @@
     </div>
     <div class="row">
       <label><input type="checkbox" id="checkerboard-toggle"> Checkerboard</label>
+    </div>
+    <div class="row" style="padding-left:20px;">
+      <select id="color-scheme-select" disabled>
+        <option value="checkerboard">Checkerboard</option>
+        <option value="stripes2">Stripes (2-color)</option>
+        <option value="stripes3">Stripes (3-color)</option>
+      </select>
     </div>
     <div class="row" style="padding-left:20px;">
       <label><input type="checkbox" id="onion-skin-toggle" disabled> Onion skin overlay</label>
@@ -574,18 +594,41 @@ const EXPAND_BUFFER = 2;
 
 /* ═══════════════════════════════════════════════
    CHECKERBOARD / CELL PATTERNS
-   Built as a generic "pattern index per cell" system rather than a
-   hardcoded 2-color checkerboard, so a future more intricate design is
-   just a different patternIndexFor() + a longer CHECKERBOARD_COLORS /
-   CHECKERBOARD_LABELS list — nothing else (rendering, counts, the onion
-   skin overlay) needs to change to support more than 2 groups.
+   A small registry of colorings rather than one hardcoded checkerboard, so
+   switching the active scheme is just picking a different entry — nothing
+   else (rendering, counts, the onion skin overlay) needs to change to
+   support a new one. Only the three schemes a coloring-theory reference
+   recommends building first are included: checkerboard and 2/3-color row
+   stripes. (See "Grid Colorings for Pentomino Puzzles", shared 2026-10-01 —
+   its other ~10 schemes and its solver/validator sections are for a puzzle
+   solver, which this app doesn't have; these three are overlay/paint
+   options only.)
 ═══════════════════════════════════════════════ */
-const CHECKERBOARD_COLORS = ['var(--checker-0)', 'var(--checker-1)'];
-const CHECKERBOARD_LABELS = ['Black', 'White'];
-function patternIndexFor(r, c){
-  const n = CHECKERBOARD_COLORS.length;
-  return ((r + c) % n + n) % n; // double-mod: r/c can be negative in Infinite Grid mode
-}
+const COLOR_SCHEMES = {
+  checkerboard: {
+    label: 'Checkerboard',
+    colors: ['var(--checker-0)', 'var(--checker-1)'],
+    labels: ['Black', 'White'],
+    indexFor: (r, c) => { const n = 2; return ((r + c) % n + n) % n; }
+  },
+  stripes2: {
+    label: 'Stripes (2-color)',
+    colors: ['var(--checker-0)', 'var(--checker-1)'],
+    labels: ['Dark', 'Light'],
+    indexFor: (r, c) => { const n = 2; return (r % n + n) % n; }
+  },
+  stripes3: {
+    label: 'Stripes (3-color)',
+    colors: ['var(--checker-0)', 'var(--checker-1)', 'var(--checker-2)'],
+    labels: ['Dark', 'Mid', 'Light'],
+    indexFor: (r, c) => { const n = 3; return (r % n + n) % n; }
+  }
+};
+let activeColorScheme = COLOR_SCHEMES[localStorage.getItem('poly_colorScheme')] ? localStorage.getItem('poly_colorScheme') : 'checkerboard';
+function currentScheme(){ return COLOR_SCHEMES[activeColorScheme]; }
+// r/c can be negative in Infinite Grid mode — each scheme's indexFor already
+// double-mods, so this just forwards to the active one.
+function patternIndexFor(r, c){ return currentScheme().indexFor(r, c); }
 
 let checkerboardEnabled = localStorage.getItem('poly_checkerboard') === 'true';
 let onionSkinEnabled = checkerboardEnabled && localStorage.getItem('poly_onionSkin') === 'true';
@@ -594,6 +637,7 @@ function renderCheckerOverlay(){
   const overlay = document.getElementById('checker-overlay');
   overlay.innerHTML = '';
   if(!checkerboardEnabled || !onionSkinEnabled) return;
+  const scheme = currentScheme();
   // Onion skin only matters where it's actually hiding something — draw it
   // only over squares a piece currently covers, not the whole board.
   const covered = new Set();
@@ -609,18 +653,17 @@ function renderCheckerOverlay(){
     cell.style.top = pxRow(r) + 'px';
     cell.style.width = CELL + 'px';
     cell.style.height = CELL + 'px';
-    cell.style.background = CHECKERBOARD_COLORS[patternIndexFor(r,c)];
+    cell.style.background = scheme.colors[patternIndexFor(r,c)];
     overlay.appendChild(cell);
   });
 }
 
-function updateCheckerCounts(){
-  const el = document.getElementById('checker-counts');
-  if(!checkerboardEnabled){ el.style.display = 'none'; return; }
-  el.style.display = 'block';
-  const counts = new Array(CHECKERBOARD_COLORS.length).fill(0);
+// Counts cells of each color covered by the given pieces (overlaps counted
+// once). Shared by the whole-board and selected-pieces count displays.
+function countColorsCovered(pieces, n){
+  const counts = new Array(n).fill(0);
   const seen = new Set();
-  placedPieces.forEach(p=>p.cells.forEach(([r,c])=>{
+  pieces.forEach(p=>p.cells.forEach(([r,c])=>{
     const rr = p.anchorRow+r, cc = p.anchorCol+c;
     if(rr<gridMinRow || rr>gridMaxRow || cc<gridMinCol || cc>gridMaxCol) return;
     const key = rr+','+cc;
@@ -628,7 +671,32 @@ function updateCheckerCounts(){
     seen.add(key);
     counts[patternIndexFor(rr,cc)]++;
   }));
-  el.innerHTML = CHECKERBOARD_LABELS.map((label,i)=>`${label}: <b>${counts[i]||0}</b>`).join(' &nbsp; ');
+  return counts;
+}
+
+function updateCheckerCounts(){
+  const el = document.getElementById('checker-counts');
+  if(!checkerboardEnabled){ el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const scheme = currentScheme();
+  const n = scheme.colors.length;
+
+  const totalByColor = new Array(n).fill(0);
+  for(let r=gridMinRow; r<=gridMaxRow; r++){
+    for(let c=gridMinCol; c<=gridMaxCol; c++) totalByColor[patternIndexFor(r,c)]++;
+  }
+  const coveredByColor = countColorsCovered(placedPieces, n);
+  const remainingByColor = totalByColor.map((t,i)=>t-coveredByColor[i]);
+
+  let html = '<div>' + scheme.labels.map((label,i)=>`${label}: <b>${remainingByColor[i]}</b>`).join(' &nbsp; ') + ' remaining</div>';
+
+  if(selectedIds.size > 0){
+    const selectedPieces = [...selectedIds].map(id=>placedPieces.find(p=>p.id===id)).filter(Boolean);
+    const selByColor = countColorsCovered(selectedPieces, n);
+    html += '<div class="checker-counts-selected">Selected: ' + scheme.labels.map((label,i)=>`${label}: <b>${selByColor[i]}</b>`).join(' &nbsp; ') + ' covered</div>';
+  }
+
+  el.innerHTML = html;
 }
 
 // Grow the grid to keep `piece` comfortably inside it — only on the side(s)
@@ -1217,6 +1285,7 @@ function startDragFromTile(e, cells, color, name){
   const grabDC = Math.floor((cols-1)/2);
   const ghostEl = makeGhost(cells, color);
   drag = { mode:'new', cells: cells.map(c=>c.slice()), color, name, grabDR, grabDC, ghostEl, moved:true };
+  updateSelToolbar(); // hide immediately — drag is now set, no need to wait for a renderAll
   updateDrag(e.clientX, e.clientY);
   window.addEventListener('pointermove', onDragMove);
   window.addEventListener('pointerup', onDragEnd);
@@ -1225,16 +1294,28 @@ function startDragFromTile(e, cells, color, name){
 function startDragFromPlaced(e, piece){
   e.preventDefault();
   e.stopPropagation();
-  selectPiece(piece.id);
+  // Starting a drag on a piece that's already part of a multi-selection
+  // moves the whole group together; only collapse to a single-piece
+  // selection when the piece wasn't already selected alongside others.
+  const groupIds = (selectedIds.has(piece.id) && selectedIds.size > 1)
+    ? [...selectedIds]
+    : [piece.id];
+  if(groupIds.length === 1) selectPiece(piece.id);
   const blk = e.target.closest('.blk');
   const dr = blk ? parseInt(blk.dataset.dr) : 0;
   const dc = blk ? parseInt(blk.dataset.dc) : 0;
   const ghostEl = makeGhost(piece.cells, piece.color);
+  const groupStart = groupIds.map(id=>{
+    const p = placedPieces.find(pp=>pp.id===id);
+    return { id, anchorRow: p.anchorRow, anchorCol: p.anchorCol };
+  });
   drag = {
     mode:'move', cells: piece.cells.map(c=>c.slice()), color: piece.color, name: piece.name,
     grabDR: dr, grabDC: dc, ghostEl, sourceId: piece.id,
+    groupStart, startAnchorRow: piece.anchorRow, startAnchorCol: piece.anchorCol,
     startX: e.clientX, startY: e.clientY, moved: false
   };
+  updateSelToolbar(); // hide immediately — drag is now set, no need to wait for a renderAll
   updateDrag(e.clientX, e.clientY);
   const wrapEl = piecesLayerEl.querySelector(`[data-id="${piece.id}"]`);
   if(wrapEl) wrapEl.style.visibility = 'hidden';
@@ -1352,10 +1433,20 @@ function onDragEnd(e){
     const piece = placedPieces.find(p=>p.id===drag.sourceId);
     if(piece && drag.moved){
       pushUndo();
-      piece.anchorRow = anchorRow;
-      piece.anchorCol = anchorCol;
-      maybeExpandGrid(piece);
-      updatePendingPlacement(piece.id);
+      // Move every piece in the group (just this one, unless the drag
+      // started on a piece that was already part of a multi-selection) by
+      // the same delta the dragged piece moved, mirroring how arrow-key
+      // moves apply to the whole selection — no fit check, literal moves.
+      const dRow = anchorRow - drag.startAnchorRow;
+      const dCol = anchorCol - drag.startAnchorCol;
+      const groupPieces = drag.groupStart
+        .map(g=>({ piece: placedPieces.find(p=>p.id===g.id), start: g }))
+        .filter(g=>g.piece);
+      groupPieces.forEach(({piece: p, start})=>{
+        p.anchorRow = start.anchorRow + dRow;
+        p.anchorCol = start.anchorCol + dCol;
+      });
+      groupPieces.forEach(({piece: p})=>{ maybeExpandGrid(p); updatePendingPlacement(p.id); });
       maybeContractGrid();
     }
   }
@@ -1488,6 +1579,10 @@ function duplicateSelected(){
 function updateSelToolbar(){
   let bar = document.getElementById('sel-toolbar');
   if(bar) bar.remove();
+  // Hide the floating rotate/flip/duplicate/delete buttons for the whole
+  // duration of a drag (new piece or move) — they shouldn't hover over a
+  // piece's old position while it's being dragged somewhere else.
+  if(drag) return;
   if(selectedIds.size===0) return;
 
   const pieces = [...selectedIds].map(id=>placedPieces.find(p=>p.id===id)).filter(Boolean);
@@ -1558,6 +1653,8 @@ document.addEventListener('keydown', e=>{
   if(e.target.matches && e.target.matches('input[type=text], input[type=number], input[type=color]')) return;
 
   if(e.key==='z' || e.key==='Z'){ e.preventDefault(); undo(); return; }
+  // D is already Duplicate, so Escape is the deselect-all shortcut instead.
+  if(e.key==='Escape'){ deselect(); return; }
   if(selectedIds.size===0) return;
 
   // Arrow keys always move every selected piece together, even into an
@@ -1781,11 +1878,17 @@ document.getElementById('checkerboard-toggle').addEventListener('change', functi
   localStorage.setItem('poly_checkerboard', checkerboardEnabled);
   const onionToggle = document.getElementById('onion-skin-toggle');
   onionToggle.disabled = !checkerboardEnabled;
+  document.getElementById('color-scheme-select').disabled = !checkerboardEnabled;
   if(!checkerboardEnabled){
     onionSkinEnabled = false;
     onionToggle.checked = false;
     localStorage.setItem('poly_onionSkin', false);
   }
+  setupBoard();
+});
+document.getElementById('color-scheme-select').addEventListener('change', function(){
+  activeColorScheme = this.value;
+  localStorage.setItem('poly_colorScheme', activeColorScheme);
   setupBoard();
 });
 document.getElementById('onion-skin-toggle').addEventListener('change', function(){
@@ -1960,6 +2063,8 @@ document.getElementById('editor-save').addEventListener('click', ()=>{
 document.getElementById('grid-size-input').value = Math.max(gridRows(), gridCols());
 document.getElementById('infinite-grid-toggle').checked = infiniteGrid;
 document.getElementById('checkerboard-toggle').checked = checkerboardEnabled;
+document.getElementById('color-scheme-select').value = activeColorScheme;
+document.getElementById('color-scheme-select').disabled = !checkerboardEnabled;
 document.getElementById('onion-skin-toggle').checked = onionSkinEnabled;
 document.getElementById('onion-skin-toggle').disabled = !checkerboardEnabled;
 document.getElementById('grid-size-input').disabled = infiniteGrid;

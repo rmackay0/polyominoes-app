@@ -312,10 +312,9 @@
     pointer-events: none;
     opacity: 0.7;
     z-index: 999;
-    transition: left 0.05s linear, top 0.05s linear;
   }
   .ghost.invalid .piece-svg { filter: grayscale(0.5) brightness(0.7); }
-  .ghost.trashing { opacity: 0.35; transform: scale(0.6); transition: left 0.05s linear, top 0.05s linear, opacity 0.15s, transform 0.15s; }
+  .ghost.trashing { opacity: 0.35; transform: scale(0.6); transition: opacity 0.15s, transform 0.15s; }
 
   .sel-toolbar {
     position: fixed;

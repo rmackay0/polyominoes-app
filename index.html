@@ -1357,6 +1357,23 @@ function updateDrag(clientX, clientY){
     if(cellEl) cellEl.classList.add(valid?'hl-valid':'hl-invalid');
   });
 
+  // When dragging one piece of a multi-selection, preview the whole group
+  // moving together by nudging the other selected pieces' DOM elements by
+  // the same delta — only the dragged piece gets a ghost, so without this
+  // the rest of the group would sit frozen until the drop, then jump.
+  if(drag.mode==='move' && drag.groupStart && drag.groupStart.length > 1){
+    const dRow = anchorRow - drag.startAnchorRow;
+    const dCol = anchorCol - drag.startAnchorCol;
+    drag.groupStart.forEach(g=>{
+      if(g.id === drag.sourceId) return;
+      const wrapEl = piecesLayerEl.querySelector(`[data-id="${g.id}"]`);
+      if(wrapEl){
+        wrapEl.style.left = pxCol(g.anchorCol + dCol) + 'px';
+        wrapEl.style.top = pxRow(g.anchorRow + dRow) + 'px';
+      }
+    });
+  }
+
   return { anchorRow, anchorCol, valid };
 }
 

@@ -362,11 +362,23 @@
   .color-custom-input { width: 28px; height: 22px; border: none; background: none; cursor: pointer; }
   .modal-btn-row { display: flex; gap: 8px; margin-top: 14px; }
   .modal-btn-row button { flex: 1; }
+
+  .htp-body p { font-size: 0.8rem; color: var(--text); line-height: 1.5; margin-bottom: 10px; }
+  .htp-body p:last-child { margin-bottom: 0; }
+  .htp-controls { color: var(--text-dim) !important; font-size: 0.72rem !important; }
+  .htp-dont-show {
+    display: flex; align-items: center; gap: 6px; margin-top: 14px;
+    font-size: 0.74rem; color: var(--text-dim); cursor: pointer;
+  }
+  .htp-dont-show input { accent-color: var(--accent); cursor: pointer; }
 </style>
 </head>
 <body>
 
-<div class="topbar"><span class="logo">&#9670;</span><span class="title">Polyominoes</span></div>
+<div class="topbar">
+  <span class="logo">&#9670;</span><span class="title">Polyominoes</span>
+  <button class="btn-mini" id="how-to-play-btn" style="margin-left:auto;" title="How to Play">? How to Play</button>
+</div>
 <div id="error-toast" class="error-toast"></div>
 <div id="marquee-box"></div>
 
@@ -467,6 +479,22 @@
     <div class="modal-btn-row">
       <button class="btn-clear" id="editor-cancel">Cancel</button>
       <button class="btn-save" id="editor-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="how-to-play-modal">
+  <div class="modal" style="width:420px;">
+    <h2>How to Play</h2>
+    <div class="htp-body">
+      <p>Place <b>every piece</b> onto the board. Pieces can't overlap or hang off the grid, but you don't need to fill every square — empty cells are fine.</p>
+      <p>The board is solved once, for <b>every row and every column</b>, the number of <b>filled squares</b> in it adds up to an even number.</p>
+      <p>Count squares, not pieces. A U-pentomino placed so its top edge covers 2 squares of one row and its bottom edge covers 3 squares of the row below adds 2 to that row's count and 3 to the next row's — not "1 piece" to each.</p>
+      <p class="htp-controls">Drag to place &bull; click to select (+shift for multiple) &bull; arrows move &bull; R rotate &bull; T flip &bull; D duplicate &bull; Del delete &bull; Z undo &bull; Esc deselect</p>
+    </div>
+    <label class="htp-dont-show"><input type="checkbox" id="how-to-play-dont-show"> Don't show this again</label>
+    <div class="modal-btn-row">
+      <button class="btn-save" id="how-to-play-close">Got it</button>
     </div>
   </div>
 </div>
@@ -2074,6 +2102,21 @@ document.getElementById('editor-save').addEventListener('click', ()=>{
 });
 
 /* ═══════════════════════════════════════════════
+   HOW TO PLAY
+═══════════════════════════════════════════════ */
+function openHowToPlay(){
+  document.getElementById('how-to-play-modal').classList.remove('hidden');
+}
+function closeHowToPlay(){
+  document.getElementById('how-to-play-modal').classList.add('hidden');
+  if(document.getElementById('how-to-play-dont-show').checked){
+    localStorage.setItem('poly_hideHowToPlay', 'true');
+  }
+}
+document.getElementById('how-to-play-btn').addEventListener('click', openHowToPlay);
+document.getElementById('how-to-play-close').addEventListener('click', closeHowToPlay);
+
+/* ═══════════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════════ */
 document.getElementById('grid-size-input').value = Math.max(gridRows(), gridCols());
@@ -2089,6 +2132,7 @@ renderStandardTiles();
 renderPentominoTiles();
 renderCustomTiles();
 renderAll();
+if(localStorage.getItem('poly_hideHowToPlay') !== 'true') openHowToPlay();
 
 window.addEventListener('resize', updateSelToolbar);
 window.addEventListener('scroll', updateSelToolbar);

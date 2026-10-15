@@ -11,7 +11,48 @@ Read `index.html` top to bottom before changing anything — it's organized
 into clearly commented sections (CSS, then a big `<script>` split into
 CONSTANTS, FIXED PIECE SETS, STATE, BOARD SETUP, SOLID SHAPE RENDERING,
 RENDERING, PALETTE RENDERING, DRAG, SELECTION/ROTATE/etc, KEYBOARD CONTROLS,
-GRID SIZE, TRAY CONTROLS, CUSTOM PIECE EDITOR, INIT).
+GRID SIZE, TRAY CONTROLS, CUSTOM PIECE EDITOR, HOW TO PLAY, INIT).
+
+## Public "puzzle mode" direction (in progress, started 2026-10-15)
+
+This app is being adapted into a public-facing deployment modeled on NYT
+Games — land directly on a specific daily puzzle, no sandbox navigation —
+while **keeping the current free-form sandbox** as the internal/admin tool
+for building and testing those puzzle configs (not being replaced).
+Confirmed decisions so far, all from direct user conversation (none of this
+is derivable from the code yet, since most of it isn't built):
+
+- **Grid shape customization** = a rectangular grid with specific cells
+  blocked out per puzzle (holes), not a free-form painted outline. Simplest
+  data model: board bounds + a list of blocked cells.
+- **Win condition** (confirmed 2026-10-15 — **not** classic exact-cover,
+  don't assume "every cell must be covered"): a puzzle is solved when (1)
+  every piece in that puzzle's given set has been placed on the board, validly
+  (no overlaps, nothing off-grid or on a blocked cell, none left in the tray),
+  AND (2) every row and every column has an **even number of covered cells**.
+  Empty cells are fine — the board does not need to be fully covered. Count
+  **individual covered squares**, not pieces: e.g. a U-pentomino placed so
+  its top edge covers 2 squares of one row and its bottom edge covers 3
+  squares of the row below adds 2 to that row's tally and 3 to the next
+  row's — not "1" to each. This is cheap to check live (just tally covered
+  cells per row/column after each placement and test evenness) — no solver
+  needed for in-app feedback.
+- **Solver** (not built yet): an **offline Node script**, never shipped to
+  players, that enumerates valid full-piece-set placements for a given
+  board+piece-set config and checks which satisfy the row/column-parity win
+  condition above — used by the admin to confirm a puzzle is actually
+  solvable (and ideally how many solutions it has) before publishing it.
+  Deliberately not an in-app feature, to keep the public bundle small and
+  the solution out of the page source.
+- **Sequencing** (user's choice, given the size of this): How to Play modal
+  first (done — see below), then piece-visual rework (solid blocks →
+  connected square units), then the grid-shape/puzzle data model, then the
+  solver. Mobile optimization is explicitly deferred to a later phase.
+- Still open / not yet decided: how "puzzle mode" is actually entered (a
+  URL param/route on the same deployment vs. something else), whether
+  multiple puzzles need a picker or it's always "today's puzzle," and the
+  piece-set-per-puzzle data format. Don't assume an answer — ask before
+  building the mode split itself.
 
 ## What's implemented
 
@@ -147,6 +188,16 @@ GRID SIZE, TRAY CONTROLS, CUSTOM PIECE EDITOR, INIT).
 - **Undo**: single global stack (`pushUndo`/`undo`), snapshots
   `placedPieces` + selection + grid bounds as JSON. Called before every
   mutating action.
+- **How to Play modal**: `#how-to-play-btn` (top-right of the topbar) opens
+  `#how-to-play-modal`, reusing the existing `.modal-backdrop`/`.modal`
+  pattern from the custom piece editor. Explains the actual win condition
+  (see "Public puzzle mode direction" above) including the "count squares,
+  not pieces" U-pentomino example. Auto-opens once on a visitor's first
+  load (`openHowToPlay()` called at the end of INIT, gated on
+  `localStorage.poly_hideHowToPlay !== 'true'`); a "Don't show this again"
+  checkbox in the modal sets that flag on close. No backdrop-click-to-close
+  or Escape-to-close — kept consistent with the editor modal's existing
+  explicit-button-only pattern, not a new convention.
 - **Keyboard**: arrows move, R rotate, T/F flip, D duplicate, Del/Backspace
   delete, Z undo, Escape deselects all. All operate on the current
   `selectedIds` (single or multi). Escape is deselect rather than D because

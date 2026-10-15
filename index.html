@@ -821,17 +821,15 @@ let placedIdCounter = 1;
 let selectedIds = new Set();
 
 // Any piece currently sitting invalid — overlapping another piece, or
-// extending past the grid edge in fixed-size mode. While non-empty,
-// selection is locked: you can keep moving/rotating/flipping/deleting
-// pieces that are pending OR already part of the current selection, but
-// selecting or dragging anything outside that is blocked (with an
-// on-screen message) until everything pending is valid again or removed.
+// extending past the grid edge in fixed-size mode. Rendered with a red
+// glow (`.invalid`, driven purely by membership here, independent of
+// selection) until it's moved/rotated/flipped/deleted into a valid spot
+// or removed — but it does NOT block interacting with any other piece in
+// the meantime. There used to be a global "lock" here that blocked
+// selecting/dragging anything else while a piece was pending; removed at
+// the user's explicit request so a misplaced piece can just sit there
+// while the rest of the board keeps working normally.
 let pendingPlacementIds = new Set();
-
-function isLocked(){ return pendingPlacementIds.size > 0; }
-function canInteractWith(id){
-  return !isLocked() || pendingPlacementIds.has(id) || selectedIds.has(id);
-}
 
 function updatePendingPlacement(pieceId){
   const piece = placedPieces.find(p=>p.id===pieceId);
@@ -1405,7 +1403,6 @@ function makeGhost(cells, color){
 
 function startDragFromTile(e, cells, color, name){
   if(editingGridShape){ showBlockedMessage('Finish editing the grid shape first'); return; }
-  if(isLocked()){ showBlockedMessage(); return; }
   e.preventDefault();
   const {rows, cols} = bounds(cells);
   const grabDR = Math.floor((rows-1)/2);
@@ -1607,7 +1604,6 @@ function onDragEnd(e){
    SELECTION / ROTATE / FLIP / DUPLICATE / DELETE
 ═══════════════════════════════════════════════ */
 function selectPiece(id){
-  if(isLocked() && !canInteractWith(id)){ showBlockedMessage(); return; }
   selectedIds.clear();
   selectedIds.add(id);
   renderAll();
@@ -1617,13 +1613,11 @@ function selectPiece(id){
 // touching the rest — this is how you build a multi-piece selection before
 // letting go of shift and using arrow keys / rotate / flip on all of them.
 function toggleSelectPiece(id){
-  if(isLocked() && !canInteractWith(id)){ showBlockedMessage(); return; }
   if(selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
   renderAll();
 }
 
 function deselect(){
-  if(isLocked()) return; // must resolve it before it's allowed to lose focus
   selectedIds.clear();
   renderAll();
 }
@@ -1830,7 +1824,6 @@ piecesLayerEl.addEventListener('pointerdown', e=>{
   if(!wrapEl) return;
   const piece = placedPieces.find(p=>p.id===wrapEl.dataset.id);
   if(!piece) return;
-  if(isLocked() && !canInteractWith(piece.id)){ showBlockedMessage(); return; }
   // Shift-click toggles this piece into/out of the selection and doesn't
   // start a drag — that's a separate gesture from moving pieces around.
   if(e.shiftKey){
@@ -1846,7 +1839,6 @@ piecesLayerEl.addEventListener('contextmenu', e=>{
   if(!wrapEl) return;
   e.preventDefault();
   const id = wrapEl.dataset.id;
-  if(isLocked() && !canInteractWith(id)){ showBlockedMessage(); return; }
   pushUndo();
   placedPieces = placedPieces.filter(p=>p.id!==id);
   selectedIds.delete(id);
@@ -1872,7 +1864,6 @@ boardEl.addEventListener('pointerdown', e=>{
     toggleBlockedCell(Number(e.target.dataset.r), Number(e.target.dataset.c));
     return;
   }
-  if(isLocked()){ showBlockedMessage(); return; }
   e.preventDefault();
   marquee = { startX: e.clientX, startY: e.clientY, additive: e.shiftKey, moved: false };
   marqueeBoxEl.style.left = e.clientX + 'px';

@@ -102,20 +102,27 @@ is derivable from the code yet, since most of it isn't built):
   success — this was a self-caught bug (originally blurred unconditionally,
   which silently broke "press Enter again to dismiss" because focus was
   already gone for the second press).
-- **Placement rules**: grid-locked (integer cells), but overlap and
-  extending past the border are both *allowed*. Any piece in that state is
-  tracked in `pendingPlacementIds` (a `Set`, supports multiple at once) and
-  rendered with a red glow. While any piece is pending, selection is locked
-  to pending pieces only (`isLocked()`/`canInteractWith(id)`) — clicking
-  another piece, starting a new drag from the tray, or deselecting is
-  blocked with an on-screen toast ("Previous piece not placed in the right
-  place"). Only **duplicate** auto-searches for an open spot
-  (`findOpenAnchor`); rotate/flip/arrow-keys/drag never relocate a piece to
-  "help" it fit — they apply literally and let the red state show if that
-  broke it. **Critical ordering rule**: `updatePendingPlacement(pieceId)`
+- **Placement rules**: grid-locked (integer cells), but overlap, extending
+  past the border, and landing on a blocked cell are all *allowed*. Any
+  piece in that state is tracked in `pendingPlacementIds` (a `Set`, supports
+  multiple at once) and rendered with a red glow, purely from membership in
+  that set — independent of `selectedIds`, so it persists whether or not
+  the piece is currently selected. Only **duplicate** auto-searches for an
+  open spot (`findOpenAnchor`); rotate/flip/arrow-keys/drag never relocate a
+  piece to "help" it fit — they apply literally and let the red state show
+  if that broke it. **Critical ordering rule**: `updatePendingPlacement(pieceId)`
   must always be called **after** `maybeExpandGrid()`, never before — doing
   it in the wrong order was a real, previously-shipped bug (see Known
   issues below) and it's an easy mistake to reintroduce at a new call site.
+  **No global lock** (removed 2026-10-15 at explicit user request): earlier
+  versions blocked clicking/dragging/deselecting anything else while any
+  piece was pending (`isLocked()`/`canInteractWith(id)`, with a blocking
+  toast). That's gone — a pending piece just sits there red; every other
+  piece (new tray drags, selecting, moving, right-click delete, clicking
+  empty space to deselect) works completely normally regardless of what
+  else is pending. Don't reintroduce a global interaction lock here; if a
+  future change needs to restrict interaction with a specific piece, scope
+  it to that piece only, not the whole board.
 - **Infinite Grid**: checkbox that switches from a fixed size (manual
   input) to auto-expand/contract. `maybeExpandGrid(piece)` grows whichever
   side(s) a piece is touching/exceeding (`EXPAND_BUFFER = 2`);

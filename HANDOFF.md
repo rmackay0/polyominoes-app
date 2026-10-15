@@ -45,9 +45,9 @@ is derivable from the code yet, since most of it isn't built):
   Deliberately not an in-app feature, to keep the public bundle small and
   the solution out of the page source.
 - **Sequencing** (user's choice, given the size of this): How to Play modal
-  first (done), then piece-visual rework (done — see below), then the
-  grid-shape/puzzle data model, then the solver. Mobile optimization is
-  explicitly deferred to a later phase.
+  (done), piece-visual rework (done), grid-shape data model (done — see
+  "Grid shape (blocked cells)" below), then the solver. Mobile optimization
+  is explicitly deferred to a later phase.
 - Still open / not yet decided: how "puzzle mode" is actually entered (a
   URL param/route on the same deployment vs. something else), whether
   multiple puzzles need a picker or it's always "today's puzzle," and the
@@ -164,6 +164,38 @@ is derivable from the code yet, since most of it isn't built):
   piece of a multi-selection to the trash only deletes that one piece, not
   the whole group — intentional, since the UI only ever shows that one
   piece's ghost heading toward the trash.
+- **Grid shape (blocked cells)**: `blockedCells` (a `Set` of `"r,c"`
+  absolute-coordinate keys, persisted to `localStorage` as
+  `poly_blockedCells`) lets specific cells be removed from the board
+  entirely — the "variable layouts" part of the public puzzle-mode
+  direction. Deliberately **not** called "holes" anywhere in code/UI: that
+  word was already taken by `#holes-count` for a different, pre-existing
+  concept (an uncovered-but-placeable cell — the same sense the pentomino-
+  coloring reference doc uses it in). A blocked cell behaves like
+  out-of-bounds: `isValidPlacement` rejects it, and it's excluded from the
+  total/open tallies (`setupBoard`'s `total-count`, `updateHolesCount`'s
+  `holes-count`) and from the checkerboard scheme's per-color totals
+  (`updateCheckerCounts`) — but a piece can still be *dropped* on one, same
+  as any other invalid placement (soft-invalid/pending, not a hard
+  rejection — consistent with how overlap and off-grid already work).
+  Toggled via the "Edit grid shape" sidebar checkbox
+  (`editingGridShape`/`#edit-shape-toggle`), which repurposes a plain
+  board-cell click (normally the start of a marquee drag) into
+  `toggleBlockedCell(r,c)` instead. While that mode is on,
+  `body.editing-grid-shape` is set, which does two things via CSS alone —
+  no extra JS gating needed in the piece-interaction code: `.placed-piece
+  .blk { pointer-events: none; }` so clicks reach the board cell
+  underneath even where a piece is currently sitting (you can block/unblock
+  a cell regardless of what's on it), and a pointer cursor on every cell.
+  Starting a **new** piece drag from the tray while editing is explicitly
+  blocked with a toast (`startDragFromTile` checks `editingGridShape`
+  first) — editing the board's shape and placing pieces are kept as two
+  separate modes, not mixed. Toggling a cell calls `pushUndo()` first and
+  revalidates every placed piece afterward (`updatePendingPlacement`) since
+  blocking/unblocking a cell can invalidate or un-invalidate whatever's
+  sitting on it; `blockedCells` is included in the undo snapshot alongside
+  grid bounds. CSS: `.board-cell.blocked` (dashed border, `--bg` fill, so a
+  blocked cell reads as "removed" rather than just unstyled).
 - **Checkerboard / color scheme overlay**: `checkerboardEnabled` toggle
   colors the grid using one of three schemes in the `COLOR_SCHEMES`
   registry — `checkerboard` ((r+c) mod 2), `stripes2` (r mod 2), `stripes3`

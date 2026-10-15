@@ -282,8 +282,19 @@
   .board-cell.pat0 { background: var(--checker-0); }
   .board-cell.pat1 { background: var(--checker-1); }
   .board-cell.pat2 { background: var(--checker-2); }
+  .board-cell.blocked {
+    background: var(--bg);
+    border-style: dashed;
+    border-color: var(--panel-border);
+  }
   .board-cell.hl-valid { background: var(--valid-bg); border-color: var(--valid-border); }
   .board-cell.hl-invalid { background: var(--invalid-bg); border-color: var(--invalid-border); }
+
+  /* While editing the grid shape, clicks must reach the board cell
+     underneath even where a piece is currently sitting, so a cell can be
+     blocked/unblocked regardless of what's on it right now. */
+  body.editing-grid-shape #board .board-cell { cursor: pointer; }
+  body.editing-grid-shape .placed-piece .blk { pointer-events: none; }
 
   #pieces-layer { position: absolute; inset: 10px; pointer-events: none; }
   /* Sits above pieces-layer so the pattern shows through ("onion skin")
@@ -418,6 +429,12 @@
     </div>
     <div class="row">
       <label><input type="checkbox" id="infinite-grid-toggle"> Infinite Grid</label>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="edit-shape-toggle"> Edit grid shape</label>
+    </div>
+    <div class="row" id="edit-shape-hint" style="display:none; font-size:0.7rem; color: var(--text-dim);">
+      Click a cell to remove or restore it from the board
     </div>
     <div class="row">
       <label><input type="checkbox" id="checkerboard-toggle"> Checkerboard</label>
@@ -710,7 +727,10 @@ function updateCheckerCounts(){
 
   const totalByColor = new Array(n).fill(0);
   for(let r=gridMinRow; r<=gridMaxRow; r++){
-    for(let c=gridMinCol; c<=gridMaxCol; c++) totalByColor[patternIndexFor(r,c)]++;
+    for(let c=gridMinCol; c<=gridMaxCol; c++){
+      if(isBlocked(r,c)) continue;
+      totalByColor[patternIndexFor(r,c)]++;
+    }
   }
   const coveredByColor = countColorsCovered(placedPieces, n);
   const remainingByColor = totalByColor.map((t,i)=>t-coveredByColor[i]);
@@ -821,9 +841,9 @@ function updatePendingPlacement(pieceId){
 }
 
 let blockedMsgTimer = null;
-function showBlockedMessage(){
+function showBlockedMessage(msg){
   const el = document.getElementById('error-toast');
-  el.textContent = 'Previous piece not placed in the right place';
+  el.textContent = msg || 'Previous piece not placed in the right place';
   el.classList.add('visible');
   clearTimeout(blockedMsgTimer);
   blockedMsgTimer = setTimeout(()=> el.classList.remove('visible'), 2500);
@@ -836,7 +856,8 @@ function pushUndo(){
     placedPieces,
     selectedIds: [...selectedIds],
     pendingPlacementIds: [...pendingPlacementIds],
-    gridMinRow, gridMaxRow, gridMinCol, gridMaxCol
+    gridMinRow, gridMaxRow, gridMinCol, gridMaxCol,
+    blockedCells: [...blockedCells]
   }));
   if(undoStack.length > UNDO_LIMIT) undoStack.shift();
 }
@@ -848,6 +869,8 @@ function undo(){
   pendingPlacementIds = new Set(snap.pendingPlacementIds);
   gridMinRow = snap.gridMinRow; gridMaxRow = snap.gridMaxRow;
   gridMinCol = snap.gridMinCol; gridMaxCol = snap.gridMaxCol;
+  blockedCells = new Set(snap.blockedCells || []);
+  saveBlockedCells();
   setupBoard();
   renderAll();
 }
@@ -855,6 +878,34 @@ function undo(){
 const boardEl = document.getElementById('board');
 const piecesLayerEl = document.getElementById('pieces-layer');
 const trashZoneEl = document.getElementById('trash-zone');
+
+/* ═══════════════════════════════════════════════
+   GRID SHAPE (BLOCKED CELLS)
+   A puzzle's board isn't always a plain rectangle — specific cells can be
+   blocked out ("variable layouts" per the public puzzle-mode direction;
+   see HANDOFF.md). Deliberately NOT called "holes": that word already
+   means something else in this app (and in the pentomino-coloring
+   reference doc) — an uncovered-but-placeable cell, which is what
+   #holes-count has tracked all along. A blocked cell is removed from the
+   board entirely: it can't be placed on (isValidPlacement treats it like
+   out-of-bounds) and doesn't count toward the board's total/open tallies.
+═══════════════════════════════════════════════ */
+let blockedCells = new Set(JSON.parse(localStorage.getItem('poly_blockedCells') || '[]'));
+let editingGridShape = false;
+function isBlocked(r, c){ return blockedCells.has(r+','+c); }
+function saveBlockedCells(){ localStorage.setItem('poly_blockedCells', JSON.stringify([...blockedCells])); }
+function toggleBlockedCell(r, c){
+  pushUndo();
+  const key = r+','+c;
+  if(blockedCells.has(key)) blockedCells.delete(key); else blockedCells.add(key);
+  saveBlockedCells();
+  // Revalidate every placed piece: one might now overlap a freshly-blocked
+  // cell, or have been stuck invalid only because of a cell that just got
+  // unblocked.
+  placedPieces.forEach(p=>updatePendingPlacement(p.id));
+  setupBoard();
+  renderAll();
+}
 
 /* ═══════════════════════════════════════════════
    BOARD SETUP
@@ -866,17 +917,22 @@ function setupBoard(){
   boardEl.style.gridTemplateRows = `repeat(${rows}, ${CELL}px)`;
   boardEl.style.gap = GAP + 'px';
   boardEl.innerHTML = '';
+  let blockedInBounds = 0;
   for(let i=0;i<rows;i++){
     for(let j=0;j<cols;j++){
       const r = gridMinRow + i, c = gridMinCol + j;
+      const blocked = isBlocked(r,c);
+      if(blocked) blockedInBounds++;
       const cell = document.createElement('div');
-      cell.className = 'board-cell' + (checkerboardEnabled ? ' pat'+patternIndexFor(r,c) : '');
+      cell.className = 'board-cell'
+        + (checkerboardEnabled && !blocked ? ' pat'+patternIndexFor(r,c) : '')
+        + (blocked ? ' blocked' : '');
       cell.dataset.r = r;
       cell.dataset.c = c;
       boardEl.appendChild(cell);
     }
   }
-  document.getElementById('total-count').textContent = rows*cols;
+  document.getElementById('total-count').textContent = rows*cols - blockedInBounds;
   renderCheckerOverlay();
   updateCheckerCounts();
 }
@@ -895,6 +951,7 @@ function isValidPlacement(cells, anchorRow, anchorCol, excludeId){
   for(const [r,c] of cells){
     const rr = anchorRow+r, cc = anchorCol+c;
     if(rr<gridMinRow || cc<gridMinCol || rr>gridMaxRow || cc>gridMaxCol) return false;
+    if(isBlocked(rr,cc)) return false;
     if(occ.has(rr+','+cc)) return false;
   }
   return true;
@@ -930,7 +987,11 @@ function updateHolesCount(){
     const rr=p.anchorRow+r, cc=p.anchorCol+c;
     if(rr>=gridMinRow && rr<=gridMaxRow && cc>=gridMinCol && cc<=gridMaxCol) covered.add(rr+','+cc);
   }));
-  document.getElementById('holes-count').textContent = gridRows()*gridCols() - covered.size;
+  let blockedInBounds = 0;
+  for(let r=gridMinRow; r<=gridMaxRow; r++){
+    for(let c=gridMinCol; c<=gridMaxCol; c++){ if(isBlocked(r,c)) blockedInBounds++; }
+  }
+  document.getElementById('holes-count').textContent = gridRows()*gridCols() - blockedInBounds - covered.size;
   updateCheckerCounts();
   renderCheckerOverlay();
 }
@@ -1343,6 +1404,7 @@ function makeGhost(cells, color){
 }
 
 function startDragFromTile(e, cells, color, name){
+  if(editingGridShape){ showBlockedMessage('Finish editing the grid shape first'); return; }
   if(isLocked()){ showBlockedMessage(); return; }
   e.preventDefault();
   const {rows, cols} = bounds(cells);
@@ -1805,6 +1867,11 @@ const marqueeBoxEl = document.getElementById('marquee-box');
 
 boardEl.addEventListener('pointerdown', e=>{
   if(!e.target.classList.contains('board-cell')) return;
+  if(editingGridShape){
+    e.preventDefault();
+    toggleBlockedCell(Number(e.target.dataset.r), Number(e.target.dataset.c));
+    return;
+  }
   if(isLocked()){ showBlockedMessage(); return; }
   e.preventDefault();
   marquee = { startX: e.clientX, startY: e.clientY, additive: e.shiftKey, moved: false };
@@ -1953,6 +2020,12 @@ document.getElementById('infinite-grid-toggle').addEventListener('change', funct
   clearGridSizeError();
   if(infiniteGrid) maybeContractGrid();
   else document.getElementById('grid-size-input').value = Math.max(gridRows(), gridCols());
+});
+
+document.getElementById('edit-shape-toggle').addEventListener('change', function(){
+  editingGridShape = this.checked;
+  document.body.classList.toggle('editing-grid-shape', editingGridShape);
+  document.getElementById('edit-shape-hint').style.display = editingGridShape ? 'block' : 'none';
 });
 
 document.getElementById('checkerboard-toggle').addEventListener('change', function(){

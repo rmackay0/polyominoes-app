@@ -45,14 +45,23 @@ is derivable from the code yet, since most of it isn't built):
   Deliberately not an in-app feature, to keep the public bundle small and
   the solution out of the page source.
 - **Sequencing** (user's choice, given the size of this): How to Play modal
-  (done), piece-visual rework (done), grid-shape data model (done — see
-  "Grid shape (blocked cells)" below), then the solver. Mobile optimization
-  is explicitly deferred to a later phase.
-- Still open / not yet decided: how "puzzle mode" is actually entered (a
-  URL param/route on the same deployment vs. something else), whether
-  multiple puzzles need a picker or it's always "today's puzzle," and the
-  piece-set-per-puzzle data format. Don't assume an answer — ask before
-  building the mode split itself.
+  (done), piece-visual rework (done), grid-shape data model (done), then
+  the solver (not started). Mobile optimization is explicitly deferred to a
+  later phase.
+- **How puzzle mode is entered — resolved 2026-10-15**: **tabs**, not a
+  URL param/route. A tab bar at the top of the app lists "Sandbox" plus
+  one tab per entry in the `PUZZLES` registry; clicking a puzzle tab swaps
+  the shared board/tray UI over to that puzzle's fixed config. See "Puzzle
+  tabs" below for the full mechanism. This was built directly off a
+  concrete request ("make a tab titled test puzzle #1"), not a separate
+  architecture discussion — it's the answer to what used to be an open
+  question here.
+- Still open / not yet decided: whether this ever needs more than a
+  same-page tab bar (e.g. a real URL per puzzle for sharing/bookmarking a
+  specific one) if the puzzle list grows large, and whether "Sandbox"
+  itself stays visible/accessible in the eventual public deployment or
+  only exists for admin use. Don't assume an answer — ask before building
+  further on this.
 
 ## What's implemented
 
@@ -201,8 +210,10 @@ is derivable from the code yet, since most of it isn't built):
   revalidates every placed piece afterward (`updatePendingPlacement`) since
   blocking/unblocking a cell can invalidate or un-invalidate whatever's
   sitting on it; `blockedCells` is included in the undo snapshot alongside
-  grid bounds. CSS: `.board-cell.blocked` (dashed border, `--bg` fill, so a
-  blocked cell reads as "removed" rather than just unstyled).
+  grid bounds. CSS: `.board-cell.blocked` (dashed border, `--bg` fill) plus
+  a `::after` pseudo-element showing a red checkmark (`\2713`, `#e05252`)
+  centered on the cell — an explicit user request ("red checkmarks instead
+  of holes") over the plain dashed-empty look it originally had.
 - **Checkerboard / color scheme overlay**: `checkerboardEnabled` toggle
   colors the grid using one of three schemes in the `COLOR_SCHEMES`
   registry — `checkerboard` ((r+c) mod 2), `stripes2` (r mod 2), `stripes3`
@@ -230,13 +241,49 @@ is derivable from the code yet, since most of it isn't built):
   0.5; }` after a couple of rounds of "make it more opaque" tuning (started
   at 0.3, went to 0.375, then to 0.5 at the user's explicit request to go
   "all the way to .5").
+- **Puzzle tabs**: a tab bar (`#tab-bar`, built by `renderTabBar()`) lists
+  "Sandbox" plus one button per entry in the `PUZZLES` registry (currently
+  just `test-puzzle-1`, "Test Puzzle #1"). Clicking a puzzle tab
+  (`switchToPuzzle(key)`) takes over the shared board/tray UI: grid bounds
+  set to the puzzle's `rows`/`cols` (always 0-based), `blockedCells`
+  replaced with the puzzle's `blocked` list, `placedPieces`/selection/
+  pending/undo stack all reset fresh, Infinite Grid forced off
+  (in-memory only), and the grid-size input / Infinite Grid / Edit-grid-
+  shape controls disabled (a puzzle's shape is fixed while viewing it).
+  `#sandbox-controls` (a wrapper div around every sandbox-only sidebar row
+  and the Standard/Pentomino/Custom tray sections) is hidden and
+  `#section-puzzle` shown instead, populated by `renderPuzzleTiles(key)` —
+  just `renderFixedTiles('puzzle-tiles', PUZZLES[key].pieces,
+  'puzzle_'+key)`, the same renderer Standard/Pentomino tiles use, so
+  drag/rotate/flip-tile-preview all work identically. **Critically, none of
+  this touches `localStorage`**: `switchToPuzzle` never calls
+  `saveGridBounds()`/`saveBlockedCells()`, and `infiniteGrid`/
+  `editingGridShape` are only mutated in memory, specifically so a puzzle
+  session can never clobber the sandbox's persisted state. Leaving Sandbox
+  calls `captureSandboxSnapshot()` first (deep-copies grid bounds,
+  `blockedCells`, `placedPieces`, selection, `infiniteGrid` into
+  `sandboxSnapshot`); `switchToSandbox()` restores from it exactly. The
+  checkerboard/stripes overlay is deliberately **not** part of any of this
+  snapshotting — it's treated as a global display preference that applies
+  to whichever board is currently shown, not per-tab state.
+  **Puzzle data format**: each `PUZZLES` entry is `{title, rows, cols,
+  blocked: [[r,c],...], pieces: [{name,color,cells},...]}` — `cells` are
+  relative coordinates exactly like `STANDARD_PIECES`/`PENTOMINO_PIECES`.
+  `test-puzzle-1`'s 6 pieces and 2 blocked cells were extracted directly
+  from a user-provided sketch image (colors eyeballed/approximated, shapes
+  verified cell-by-cell — 4 of the 6 matched an existing
+  `PENTOMINO_PIECES` shape exactly, confirming the extraction was
+  accurate; the other 2 were the same pentomino type in a different
+  rotation, which is expected and fine since puzzles define their own
+  exact cells rather than referencing the catalog).
 - **Selected-piece glow**: `.placed-piece.selected .piece-svg` uses a
   single white `drop-shadow` (2px blur, 75% opacity) plus a dark
   drop-shadow for depth. This value has been tuned back and forth — see
   "Selection glow history" below before changing it again.
 - **Undo**: single global stack (`pushUndo`/`undo`), snapshots
-  `placedPieces` + selection + grid bounds as JSON. Called before every
-  mutating action.
+  `placedPieces` + selection + grid bounds + `blockedCells` as JSON. Called
+  before every mutating action. Cleared (not persisted across) on every
+  puzzle-tab switch — see "Puzzle tabs" below.
 - **How to Play modal**: `#how-to-play-btn` (top-right of the topbar) opens
   `#how-to-play-modal`, reusing the existing `.modal-backdrop`/`.modal`
   pattern from the custom piece editor. Explains the actual win condition

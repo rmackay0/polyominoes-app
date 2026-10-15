@@ -44,6 +44,15 @@
   .topbar .logo { color: var(--accent); font-size: 1.1rem; }
   .topbar .title { font-size: 1.05rem; font-weight: 700; letter-spacing: 1px; color: var(--accent); }
 
+  .tab-bar { flex: 0 0 auto; display: flex; gap: 6px; margin-top: 10px; border-bottom: 1px solid var(--panel-border); }
+  .tab-btn {
+    background: none; border: none; color: var(--text-dim);
+    font-size: 0.8rem; padding: 7px 14px; cursor: pointer;
+    border-bottom: 2px solid transparent;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
   .main-row {
     flex: 1 1 auto;
     min-height: 0;
@@ -286,6 +295,19 @@
     background: var(--bg);
     border-style: dashed;
     border-color: var(--panel-border);
+    position: relative;
+  }
+  .board-cell.blocked::after {
+    content: '\2713';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #e05252;
+    font-size: 1.3rem;
+    font-weight: 700;
+    pointer-events: none;
   }
   .board-cell.hl-valid { background: var(--valid-bg); border-color: var(--valid-border); }
   .board-cell.hl-invalid { background: var(--invalid-bg); border-color: var(--invalid-border); }
@@ -390,6 +412,7 @@
   <span class="logo">&#9670;</span><span class="title">Polyominoes</span>
   <button class="btn-mini" id="how-to-play-btn" style="margin-left:auto;" title="How to Play">? How to Play</button>
 </div>
+<div class="tab-bar" id="tab-bar"></div>
 <div id="error-toast" class="error-toast"></div>
 <div id="marquee-box"></div>
 
@@ -419,62 +442,71 @@
   </div>
 
   <div class="sidebar">
-    <div class="row">
-      Grid
-      <input type="number" id="grid-size-input" min="4" max="20" value="8">
-    </div>
-    <div class="row" id="grid-size-error" style="display:none; color: var(--invalid-border); font-size:0.7rem;">
-      <span id="grid-size-error-text"></span>
-      <button class="btn-mini" id="grid-error-accept" style="padding:3px 8px;">Accept</button>
-    </div>
-    <div class="row">
-      <label><input type="checkbox" id="infinite-grid-toggle"> Infinite Grid</label>
-    </div>
-    <div class="row">
-      <label><input type="checkbox" id="edit-shape-toggle"> Edit grid shape</label>
-    </div>
-    <div class="row" id="edit-shape-hint" style="display:none; font-size:0.7rem; color: var(--text-dim);">
-      Click a cell to remove or restore it from the board
-    </div>
-    <div class="row">
-      <label><input type="checkbox" id="checkerboard-toggle"> Checkerboard</label>
-    </div>
-    <div class="row" style="padding-left:20px;">
-      <select id="color-scheme-select" disabled>
-        <option value="checkerboard">Checkerboard</option>
-        <option value="stripes2">Stripes (2-color)</option>
-        <option value="stripes3">Stripes (3-color)</option>
-      </select>
-    </div>
-    <div class="row" style="padding-left:20px;">
-      <label><input type="checkbox" id="onion-skin-toggle" disabled> Onion skin overlay</label>
-    </div>
-
-    <div class="row tray-controls-row">
-      Tray
-      <button class="btn-mini btn-rotate" id="tray-rotate-btn" title="Rotate pieces as you drag them from the tray">&#10227; 0&deg;</button>
-      <button class="btn-mini btn-flip" id="tray-flip-btn" title="Flip pieces as you drag them from the tray">&#8646;</button>
-    </div>
-
-    <div class="palette-section" id="section-standard">
-      <div class="section-header" data-target="section-standard">
-        <span>Standard</span><span class="chevron">&#9662;</span>
+    <div id="sandbox-controls">
+      <div class="row">
+        Grid
+        <input type="number" id="grid-size-input" min="4" max="20" value="8">
       </div>
-      <div class="palette-tiles" id="standard-tiles"></div>
+      <div class="row" id="grid-size-error" style="display:none; color: var(--invalid-border); font-size:0.7rem;">
+        <span id="grid-size-error-text"></span>
+        <button class="btn-mini" id="grid-error-accept" style="padding:3px 8px;">Accept</button>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="infinite-grid-toggle"> Infinite Grid</label>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="edit-shape-toggle"> Edit grid shape</label>
+      </div>
+      <div class="row" id="edit-shape-hint" style="display:none; font-size:0.7rem; color: var(--text-dim);">
+        Click a cell to remove or restore it from the board
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="checkerboard-toggle"> Checkerboard</label>
+      </div>
+      <div class="row" style="padding-left:20px;">
+        <select id="color-scheme-select" disabled>
+          <option value="checkerboard">Checkerboard</option>
+          <option value="stripes2">Stripes (2-color)</option>
+          <option value="stripes3">Stripes (3-color)</option>
+        </select>
+      </div>
+      <div class="row" style="padding-left:20px;">
+        <label><input type="checkbox" id="onion-skin-toggle" disabled> Onion skin overlay</label>
+      </div>
+
+      <div class="row tray-controls-row">
+        Tray
+        <button class="btn-mini btn-rotate" id="tray-rotate-btn" title="Rotate pieces as you drag them from the tray">&#10227; 0&deg;</button>
+        <button class="btn-mini btn-flip" id="tray-flip-btn" title="Flip pieces as you drag them from the tray">&#8646;</button>
+      </div>
+
+      <div class="palette-section" id="section-standard">
+        <div class="section-header" data-target="section-standard">
+          <span>Standard</span><span class="chevron">&#9662;</span>
+        </div>
+        <div class="palette-tiles" id="standard-tiles"></div>
+      </div>
+
+      <div class="palette-section collapsed" id="section-pentomino">
+        <div class="section-header" data-target="section-pentomino">
+          <span>Pentominoes</span><span class="chevron">&#9662;</span>
+        </div>
+        <div class="palette-tiles" id="pentomino-tiles"></div>
+      </div>
+
+      <div class="palette-section" id="section-custom">
+        <div class="section-header" data-target="section-custom">
+          <span>Custom</span><span class="chevron">&#9662;</span>
+        </div>
+        <div class="palette-tiles" id="custom-tiles"></div>
+      </div>
     </div>
 
-    <div class="palette-section collapsed" id="section-pentomino">
-      <div class="section-header" data-target="section-pentomino">
-        <span>Pentominoes</span><span class="chevron">&#9662;</span>
+    <div class="palette-section" id="section-puzzle" style="display:none;">
+      <div class="section-header" data-target="section-puzzle">
+        <span id="puzzle-section-label">Pieces</span><span class="chevron">&#9662;</span>
       </div>
-      <div class="palette-tiles" id="pentomino-tiles"></div>
-    </div>
-
-    <div class="palette-section" id="section-custom">
-      <div class="section-header" data-target="section-custom">
-        <span>Custom</span><span class="chevron">&#9662;</span>
-      </div>
-      <div class="palette-tiles" id="custom-tiles"></div>
+      <div class="palette-tiles" id="puzzle-tiles"></div>
     </div>
   </div>
 
@@ -591,6 +623,33 @@ const PENTOMINO_PIECES = [
   { name:'Z', color:'#6b4a6b', cells:[[0,0],[0,1],[1,1],[2,1],[2,2]] },
 ];
 
+/* ═══════════════════════════════════════════════
+   PUZZLES
+   A fixed board shape + piece set, independent of the sandbox's general
+   catalog — the "puzzle mode" from the public-deployment direction (see
+   HANDOFF.md). Switching to a puzzle tab temporarily takes over the same
+   board/tray UI (grid bounds, blockedCells, placedPieces, the tray
+   sections) without touching the sandbox's own persisted state; switching
+   back to Sandbox restores it exactly via `sandboxSnapshot`. Cell
+   coordinates are relative (top-left of each piece's own bounding box),
+   exactly like STANDARD_PIECES/PENTOMINO_PIECES above.
+═══════════════════════════════════════════════ */
+const PUZZLES = {
+  'test-puzzle-1': {
+    title: 'Test Puzzle #1',
+    rows: 6, cols: 6,
+    blocked: [[2,3],[3,2]],
+    pieces: [
+      { name:'L', color:'#c9a877', cells:[[0,0],[1,0],[2,0],[3,0],[3,1]] },
+      { name:'I', color:'#5f9e8f', cells:[[0,0],[0,1],[0,2],[0,3],[0,4]] },
+      { name:'X', color:'#5f9e8f', cells:[[0,1],[1,0],[1,1],[1,2],[2,1]] },
+      { name:'N', color:'#7d6aa8', cells:[[0,1],[0,2],[0,3],[1,0],[1,1]] },
+      { name:'P', color:'#b8923f', cells:[[0,0],[0,1],[1,0],[1,1],[1,2]] },
+      { name:'U', color:'#a85c4a', cells:[[0,0],[0,2],[1,0],[1,1],[1,2]] },
+    ]
+  }
+};
+
 function applyOverrides(key, piecesArray){
   try {
     const raw = localStorage.getItem('poly_overrides_'+key);
@@ -606,6 +665,7 @@ function saveOverrides(key, piecesArray){
 }
 applyOverrides('standard', STANDARD_PIECES);
 applyOverrides('pentomino', PENTOMINO_PIECES);
+Object.keys(PUZZLES).forEach(key=>applyOverrides('puzzle_'+key, PUZZLES[key].pieces));
 
 /* ═══════════════════════════════════════════════
    STATE
@@ -903,6 +963,122 @@ function toggleBlockedCell(r, c){
   placedPieces.forEach(p=>updatePendingPlacement(p.id));
   setupBoard();
   renderAll();
+}
+
+/* ═══════════════════════════════════════════════
+   PUZZLE TABS
+   Switching to a puzzle tab temporarily takes over the shared board/tray
+   UI (grid bounds, blockedCells, placedPieces, undo stack) with that
+   puzzle's fixed config, without ever writing to the sandbox's own
+   localStorage keys — switching back to Sandbox restores it exactly from
+   `sandboxSnapshot`, taken the moment you leave it. Grid-size/Infinite
+   Grid/Edit-grid-shape are disabled while a puzzle is active since its
+   board shape is fixed; the checkerboard/stripes overlay is left alone on
+   purpose — it's a display preference, not board state, so it stays
+   whatever it was regardless of which tab you're on.
+═══════════════════════════════════════════════ */
+let activeTab = 'sandbox';
+let sandboxSnapshot = null;
+
+function captureSandboxSnapshot(){
+  sandboxSnapshot = {
+    gridMinRow, gridMaxRow, gridMinCol, gridMaxCol,
+    blockedCells: [...blockedCells],
+    placedPieces: JSON.parse(JSON.stringify(placedPieces)),
+    selectedIds: [...selectedIds],
+    pendingPlacementIds: [...pendingPlacementIds],
+    infiniteGrid
+  };
+}
+
+function updateTabBarUI(){
+  document.querySelectorAll('.tab-btn').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.tab === activeTab);
+  });
+}
+
+function renderTabBar(){
+  const bar = document.getElementById('tab-bar');
+  bar.innerHTML = '';
+  const sandboxBtn = document.createElement('button');
+  sandboxBtn.className = 'tab-btn';
+  sandboxBtn.dataset.tab = 'sandbox';
+  sandboxBtn.textContent = 'Sandbox';
+  sandboxBtn.onclick = switchToSandbox;
+  bar.appendChild(sandboxBtn);
+  Object.keys(PUZZLES).forEach(key=>{
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn';
+    btn.dataset.tab = key;
+    btn.textContent = PUZZLES[key].title;
+    btn.onclick = ()=>switchToPuzzle(key);
+    bar.appendChild(btn);
+  });
+  updateTabBarUI();
+}
+
+function renderPuzzleTiles(key){
+  document.getElementById('puzzle-section-label').textContent = PUZZLES[key].title + ' pieces';
+  renderFixedTiles('puzzle-tiles', PUZZLES[key].pieces, 'puzzle_'+key);
+}
+
+function switchToPuzzle(key){
+  const puzzle = PUZZLES[key];
+  if(!puzzle) return;
+  if(activeTab === 'sandbox') captureSandboxSnapshot();
+  activeTab = key;
+
+  gridMinRow = 0; gridMaxRow = puzzle.rows-1;
+  gridMinCol = 0; gridMaxCol = puzzle.cols-1;
+  blockedCells = new Set(puzzle.blocked.map(([r,c])=>r+','+c));
+  placedPieces = [];
+  selectedIds = new Set();
+  pendingPlacementIds = new Set();
+  undoStack = [];
+  infiniteGrid = false;
+  editingGridShape = false;
+
+  document.getElementById('edit-shape-toggle').checked = false;
+  document.getElementById('edit-shape-toggle').disabled = true;
+  document.getElementById('infinite-grid-toggle').disabled = true;
+  document.getElementById('grid-size-input').disabled = true;
+  document.body.classList.remove('editing-grid-shape');
+  document.getElementById('edit-shape-hint').style.display = 'none';
+
+  document.getElementById('sandbox-controls').style.display = 'none';
+  document.getElementById('section-puzzle').style.display = 'block';
+
+  renderPuzzleTiles(key);
+  setupBoard();
+  renderAll();
+  updateTabBarUI();
+}
+
+function switchToSandbox(){
+  activeTab = 'sandbox';
+  if(sandboxSnapshot){
+    gridMinRow = sandboxSnapshot.gridMinRow; gridMaxRow = sandboxSnapshot.gridMaxRow;
+    gridMinCol = sandboxSnapshot.gridMinCol; gridMaxCol = sandboxSnapshot.gridMaxCol;
+    blockedCells = new Set(sandboxSnapshot.blockedCells);
+    placedPieces = sandboxSnapshot.placedPieces;
+    selectedIds = new Set(sandboxSnapshot.selectedIds);
+    pendingPlacementIds = new Set(sandboxSnapshot.pendingPlacementIds);
+    infiniteGrid = sandboxSnapshot.infiniteGrid;
+  }
+  undoStack = [];
+
+  document.getElementById('edit-shape-toggle').disabled = false;
+  document.getElementById('infinite-grid-toggle').disabled = false;
+  document.getElementById('infinite-grid-toggle').checked = infiniteGrid;
+  document.getElementById('grid-size-input').disabled = infiniteGrid;
+  document.getElementById('grid-size-input').value = Math.max(gridRows(), gridCols());
+
+  document.getElementById('sandbox-controls').style.display = '';
+  document.getElementById('section-puzzle').style.display = 'none';
+
+  setupBoard();
+  renderAll();
+  updateTabBarUI();
 }
 
 /* ═══════════════════════════════════════════════
@@ -2233,6 +2409,7 @@ setupBoard();
 renderStandardTiles();
 renderPentominoTiles();
 renderCustomTiles();
+renderTabBar();
 renderAll();
 if(localStorage.getItem('poly_hideHowToPlay') !== 'true') openHowToPlay();
 

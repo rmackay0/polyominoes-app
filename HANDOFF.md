@@ -45,9 +45,9 @@ is derivable from the code yet, since most of it isn't built):
   Deliberately not an in-app feature, to keep the public bundle small and
   the solution out of the page source.
 - **Sequencing** (user's choice, given the size of this): How to Play modal
-  first (done — see below), then piece-visual rework (solid blocks →
-  connected square units), then the grid-shape/puzzle data model, then the
-  solver. Mobile optimization is explicitly deferred to a later phase.
+  first (done), then piece-visual rework (done — see below), then the
+  grid-shape/puzzle data model, then the solver. Mobile optimization is
+  explicitly deferred to a later phase.
 - Still open / not yet decided: how "puzzle mode" is actually entered (a
   URL param/route on the same deployment vs. something else), whether
   multiple puzzles need a picker or it's always "today's puzzle," and the
@@ -61,13 +61,23 @@ is derivable from the code yet, since most of it isn't built):
   + user-defined custom pieces (`customPieces`, drawn in a modal editor,
   persisted to `localStorage`).
 - **Rendering**: every piece — tray preview, drag ghost, and placed piece —
-  goes through `buildSolidShape()`, which renders a single seamless SVG
-  shape (one `<path>` fill + one `<path>` stroke for the outline) rather
-  than per-cell bordered divs. This was a deliberate fix for a real bug:
-  per-cell borders showed hairline seams on high-DPI displays, and jagged
-  "flag" artifacts at concave corners (T/S/Z pieces). The outline is traced
-  via a fine-grid rasterization boundary-walk, not per-cell borders. See
-  `buildPieceRects` / `buildFillPath` / `buildOutlinePath`.
+  goes through `buildSolidShape()`, which renders one `<path>` fill + one
+  `<path>` outline stroke for the whole piece, rather than per-cell
+  bordered divs. This was a deliberate fix for a real bug: per-cell borders
+  showed hairline seams on high-DPI displays, and jagged "flag" artifacts at
+  concave corners (T/S/Z pieces). The outline is traced via a fine-grid
+  rasterization boundary-walk, not per-cell borders. See `buildPieceRects` /
+  `buildFillPath` / `buildOutlinePath`.
+  **Connected square units** (added 2026-10-15, part of the public
+  puzzle-mode direction above): a piece needs to visibly read as joined
+  unit squares, not a solid blob, so `buildInternalDividers()` adds a third
+  `<path>` — thin stroke-only lines (`rgba(0,0,0,0.25)`, 1.5px) down the
+  middle of every swallowed internal gap between two orthogonally-adjacent
+  same-piece cells. It's still all vector strokes inside the same SVG, so
+  it does **not** reintroduce the old hairline-seam bug — the outer
+  silhouette is still the one smooth `buildOutlinePath()` trace, drawn on
+  top, completely unaffected by the interior lines. Draw order in
+  `buildSolidShape()`: fill → dividers → outer outline.
 - **Grid model**: NOT a fixed `gridSize` — it's an absolute-coordinate
   rectangle (`gridMinRow/gridMaxRow/gridMinCol/gridMaxCol`). This is what
   lets Infinite Grid mode expand just one side without ever shifting

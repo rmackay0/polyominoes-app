@@ -941,14 +941,19 @@ function pxRow(absRow){ return pxPos(absRow - gridMinRow); }
 
 /* ═══════════════════════════════════════════════
    SOLID SHAPE RENDERING
-   A piece is drawn as one seamless solid shape: each cell is absolutely
-   positioned and, on any side where a same-piece cell is adjacent, is
-   widened to swallow the gap and has no border there — so a piece's own
-   cells fuse together with no visible seams, while the outer silhouette
-   still gets a border/shadow/rounded corners. That's what keeps two
-   same-colored pieces visually distinct when placed touching each other:
-   the real gap between *different* pieces is untouched; only the seams
-   *inside* one piece disappear.
+   A piece is drawn as one shape: each cell is absolutely positioned and,
+   on any side where a same-piece cell is adjacent, is widened to swallow
+   the gap — so a piece's own cells fuse into one continuous fill with a
+   single smooth outer silhouette (border/shadow/rounded corners), instead
+   of each cell being its own separately-bordered element. That's what
+   keeps two same-colored pieces visually distinct when placed touching
+   each other: the real gap between *different* pieces is untouched; only
+   the *outer* geometry treats same-piece cells as fused.
+   A piece still needs to read as connected unit squares rather than a
+   solid blob, so buildInternalDividers() below draws a thin stroke down
+   the middle of every swallowed internal gap, as vector lines inside the
+   same SVG — never separate DOM elements, so this can't reintroduce the
+   old per-cell-border hairline-seam bug (see buildOutlinePath's comment).
 ═══════════════════════════════════════════════ */
 function hasCellAt(cells, r, c){ return cells.some(([cr,cc])=>cr===r&&cc===c); }
 
@@ -1052,6 +1057,29 @@ function buildOutlinePath(cells, cellSize, gapSize){
   return simplified.map(pts => 'M'+pts.map(p=>p.join(',')).join('L')+'Z').join(' ');
 }
 
+// Internal divider lines: one stroke segment down the middle of every
+// swallowed gap between two orthogonally-adjacent same-piece cells, so a
+// piece reads as connected unit squares rather than one solid blob. Drawn
+// as vector strokes inside the piece's own SVG (never separate DOM
+// elements), so this can't reintroduce the old per-cell-border hairline
+// seam bug — the outer silhouette is still the single smooth
+// buildOutlinePath() trace, completely unaffected by these interior lines.
+function buildInternalDividers(cells, cellSize, gapSize){
+  const segs = [];
+  cells.forEach(([r,c])=>{
+    const x = c*(cellSize+gapSize), y = r*(cellSize+gapSize);
+    if(hasCellAt(cells, r, c+1)){
+      const dx = x + cellSize + gapSize/2;
+      segs.push(`M${dx},${y} V${y+cellSize}`);
+    }
+    if(hasCellAt(cells, r+1, c)){
+      const dy = y + cellSize + gapSize/2;
+      segs.push(`M${x},${dy} H${x+cellSize}`);
+    }
+  });
+  return segs.join(' ');
+}
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 function buildSolidShape(cells, color, cellSize, gapSize){
@@ -1079,6 +1107,16 @@ function buildSolidShape(cells, color, cellSize, gapSize){
   fillPath.setAttribute('d', buildFillPath(cells, cellSize, gapSize));
   fillPath.setAttribute('fill', color);
   svg.appendChild(fillPath);
+
+  const dividers = buildInternalDividers(cells, cellSize, gapSize);
+  if(dividers){
+    const dividerPath = document.createElementNS(SVG_NS, 'path');
+    dividerPath.setAttribute('d', dividers);
+    dividerPath.setAttribute('fill', 'none');
+    dividerPath.setAttribute('stroke', 'rgba(0,0,0,0.25)');
+    dividerPath.setAttribute('stroke-width', '1.5');
+    svg.appendChild(dividerPath);
+  }
 
   const outlinePath = document.createElementNS(SVG_NS, 'path');
   outlinePath.setAttribute('d', buildOutlinePath(cells, cellSize, gapSize));

@@ -278,20 +278,42 @@ is derivable from the code yet, since most of it isn't built):
   confirming the extraction was accurate; the other 2 were the same
   pentomino type in a different rotation, expected and fine since puzzles
   define their own exact cells rather than referencing the catalog). Its
-  blocked cells were revised once already: originally `[[2,3],[3,2]]`
-  (from green X's in the first sketch), changed 2026-10-15 to
-  `[[1,1],[4,2]]` (red X's in a follow-up sketch; the green-X cells were
-  explicitly reopened). **Known issue: as of the current piece set and
-  blocked cells, this puzzle has no valid solution** — confirmed by an
-  exhaustive brute-force search (all 6 pieces, every rotation/reflection,
-  every non-overlapping placement avoiding the blocked cells) that found
-  zero arrangements satisfying the row/column-even-parity win condition,
-  for *both* the original and the current blocked-cell positions. The
-  same search succeeds instantly with zero blocked cells, so the piece set
-  itself isn't the problem — it's specifically these blocked-cell choices.
-  The user has not yet been asked to pick new ones; don't silently "fix"
-  this by moving the blocked cells without checking first, since where
-  they go is their call, not an implementation detail.
+  blocked cells went through several revisions, documented here in full
+  since this took real back-and-forth to get right:
+  1. Originally `[[2,3],[3,2]]` (green X's in the first sketch).
+  2. Changed 2026-10-15 to `[[1,1],[4,2]]` (red X's in a follow-up sketch,
+     green-X cells reopened). **This made the puzzle unsolvable** —
+     confirmed by an exhaustive brute-force search (all 6 pieces, every
+     rotation/reflection, every non-overlapping placement) that found zero
+     arrangements satisfying the row/column-even-parity win condition, for
+     *both* this and the original blocked-cell pair. The same piece set
+     solves instantly with **zero** blocked cells (24 raw solutions, 3
+     distinct up to rotating/flipping the whole board — see
+     `scratchpad/pwtest/count_solutions.js`-style scripts from that
+     session if this needs re-deriving), so the piece set itself was never
+     the problem.
+  3. **Current** (2026-10-15, same day): `[[1,1],[1,5],[5,0],[5,5]]`. Found
+     by taking one of the 3 zero-blocked solutions (anchors: L (0,0), I
+     (0,1), X (1,1), N (2,4), P (4,1), U (1,3) — all cells relative, listed
+     in reading order of the board) and blocking 4 of its 6 naturally-
+     uncovered cells. This is guaranteed not to break that solution (the
+     pieces never needed those cells), and an exhaustive check of **all 15
+     ways** to pick 4-of-6 from that solution's empty cells found every
+     single one collapses the puzzle to **exactly 1 solution** — so this
+     particular choice of 4 wasn't forced, any of the 15 would have worked
+     equally well. Verified end-to-end in the app itself (injecting the
+     solution's placements and confirming `#congrats-modal` fires), not
+     just in the standalone solver. **Difficulty**: 2,088 ways exist to
+     place all 6 pieces without overlap; only 2 (a mirrored pair) satisfy
+     the parity rule — about 1-in-1,044 odds for a "looks fine" placement
+     to actually be right, and the app only evaluates the parity rule once
+     every piece is placed and valid, so there's no partial/warmer-colder
+     feedback along the way. This is a genuinely hard puzzle, not a casual
+     one — expected and accepted, not a bug.
+  If this ever needs revisiting again: the pattern that worked was picking
+  a known zero-blocked solution first, then blocking only cells that
+  solution doesn't use — trying to pick blocked cells first and hoping a
+  solution exists is what caused step 2's failure.
 - **Puzzle progress (timer + win check)**: live-checked inside `renderAll()`
   whenever `activeTab !== 'sandbox'` (`checkPuzzleProgress()`), so it
   re-evaluates after every discrete mutation (place/move/rotate/delete/

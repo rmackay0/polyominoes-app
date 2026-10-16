@@ -298,7 +298,7 @@
     position: relative;
   }
   .board-cell.blocked::after {
-    content: '\2713';
+    content: '\2715';
     position: absolute;
     inset: 0;
     display: flex;
@@ -311,6 +311,13 @@
   }
   .board-cell.hl-valid { background: var(--valid-bg); border-color: var(--valid-border); }
   .board-cell.hl-invalid { background: var(--invalid-bg); border-color: var(--invalid-border); }
+  /* Shown once every puzzle piece is placed and valid but the row/column
+     parity win condition still fails -- an inset ring rather than a
+     background/border change so it never fights with the cell's own
+     pattern color underneath. */
+  .board-cell.parity-odd { box-shadow: inset 0 0 0 2px var(--invalid-border); }
+
+  #puzzle-tiles .tile.consumed { opacity: 0.3; pointer-events: none; }
 
   /* While editing the grid shape, clicks must reach the board cell
      underneath even where a piece is currently sitting, so a cell can be
@@ -429,6 +436,7 @@
       <div id="checker-overlay"></div>
     </div>
     <div class="info-bar">Open: <b id="holes-count">64</b>/<span id="total-count">64</span></div>
+    <div class="info-bar" id="puzzle-timer" style="display:none;"></div>
     <div class="info-bar" id="checker-counts" style="display:none;"></div>
     <button class="btn-trash" id="clear-board-btn">
       <svg width="12" height="12" viewBox="0 0 14 14" style="vertical-align:middle;margin-right:6px;" fill="none">
@@ -548,6 +556,16 @@
   </div>
 </div>
 
+<div class="modal-backdrop hidden" id="congrats-modal">
+  <div class="modal" style="width:320px; text-align:center;">
+    <h2>Solved!</h2>
+    <p id="congrats-time" style="font-size:0.9rem; color: var(--text); margin-bottom:14px;"></p>
+    <div class="modal-btn-row">
+      <button class="btn-save" id="congrats-close">Nice</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ═══════════════════════════════════════════════
    CONSTANTS & GEOMETRY HELPERS
@@ -638,7 +656,7 @@ const PUZZLES = {
   'test-puzzle-1': {
     title: 'Test Puzzle #1',
     rows: 6, cols: 6,
-    blocked: [[2,3],[3,2]],
+    blocked: [[1,1],[4,2]],
     pieces: [
       { name:'L', color:'#c9a877', cells:[[0,0],[1,0],[2,0],[3,0],[3,1]] },
       { name:'I', color:'#5f9e8f', cells:[[0,0],[0,1],[0,2],[0,3],[0,4]] },
@@ -1020,6 +1038,13 @@ function renderTabBar(){
 function renderPuzzleTiles(key){
   document.getElementById('puzzle-section-label').textContent = PUZZLES[key].title + ' pieces';
   renderFixedTiles('puzzle-tiles', PUZZLES[key].pieces, 'puzzle_'+key);
+  // A puzzle piece is "used up" once an instance of it is on the board --
+  // grayed out and undraggable until that instance is deleted again.
+  const placedNames = new Set(placedPieces.map(p=>p.name));
+  document.querySelectorAll('#puzzle-tiles .tile').forEach(tileEl=>{
+    const nameEl = tileEl.querySelector('.tile-name');
+    tileEl.classList.toggle('consumed', !!nameEl && placedNames.has(nameEl.textContent));
+  });
 }
 
 function switchToPuzzle(key){
@@ -1048,9 +1073,9 @@ function switchToPuzzle(key){
   document.getElementById('sandbox-controls').style.display = 'none';
   document.getElementById('section-puzzle').style.display = 'block';
 
-  renderPuzzleTiles(key);
+  startPuzzleTimer();
   setupBoard();
-  renderAll();
+  renderAll(); // renders the puzzle tray and runs the first progress check too
   updateTabBarUI();
 }
 
@@ -1075,10 +1100,109 @@ function switchToSandbox(){
 
   document.getElementById('sandbox-controls').style.display = '';
   document.getElementById('section-puzzle').style.display = 'none';
+  stopPuzzleTimer();
+  document.getElementById('puzzle-timer').style.display = 'none';
 
   setupBoard();
   renderAll();
   updateTabBarUI();
+}
+
+/* ═══════════════════════════════════════════════
+   PUZZLE PROGRESS (timer + win check)
+   The win condition (see HANDOFF.md): every piece in the puzzle's set
+   placed exactly once, validly (no overlaps/off-grid/blocked cells, so
+   none of it sitting in pendingPlacementIds), AND every row and column
+   has an EVEN number of covered cells -- not "every cell filled". Checked
+   fresh after every renderAll() while a puzzle tab is active, which is
+   cheap (a handful of pieces, a 6x6-ish board) and fires at exactly the
+   granularity of "something changed" without needing calls scattered
+   across every mutation site.
+═══════════════════════════════════════════════ */
+let puzzleStartTime = null;
+let puzzleTimerHandle = null;
+let puzzleSolved = false;
+
+function formatElapsed(ms){
+  const totalSec = Math.max(0, Math.floor(ms/1000));
+  const m = Math.floor(totalSec/60);
+  const s = totalSec % 60;
+  return m + ':' + String(s).padStart(2,'0');
+}
+
+function startPuzzleTimer(){
+  stopPuzzleTimer();
+  puzzleStartTime = Date.now();
+  puzzleSolved = false;
+  const el = document.getElementById('puzzle-timer');
+  el.style.display = 'block';
+  el.textContent = 'Time: 0:00';
+  puzzleTimerHandle = setInterval(()=>{
+    el.textContent = 'Time: ' + formatElapsed(Date.now() - puzzleStartTime);
+  }, 500);
+}
+
+function stopPuzzleTimer(){
+  if(puzzleTimerHandle){ clearInterval(puzzleTimerHandle); puzzleTimerHandle = null; }
+}
+
+function clearParityHighlights(){
+  document.querySelectorAll('.board-cell.parity-odd').forEach(el=>el.classList.remove('parity-odd'));
+}
+
+function showCongratsModal(timeStr){
+  document.getElementById('congrats-time').textContent = 'Your time: ' + timeStr;
+  document.getElementById('congrats-modal').classList.remove('hidden');
+}
+
+function checkPuzzleProgress(){
+  const puzzle = PUZZLES[activeTab];
+  if(!puzzle) return;
+  clearParityHighlights();
+  if(puzzleSolved) return; // already congratulated this attempt
+
+  // Not "complete" yet: wrong piece count, a piece still invalid, or a
+  // duplicate/missing name (e.g. via Duplicate instead of the tray) --
+  // none of these are evaluated for parity, same as the win condition says.
+  if(placedPieces.length !== puzzle.pieces.length) return;
+  if(pendingPlacementIds.size > 0) return;
+  const placedNames = placedPieces.map(p=>p.name);
+  const uniqueNames = new Set(placedNames);
+  if(uniqueNames.size !== placedNames.length) return;
+  for(const def of puzzle.pieces) if(!uniqueNames.has(def.name)) return;
+
+  const covered = new Set();
+  placedPieces.forEach(p=>p.cells.forEach(([r,c])=>{
+    covered.add((p.anchorRow+r)+','+(p.anchorCol+c));
+  }));
+
+  const badRows = [], badCols = [];
+  for(let r=gridMinRow; r<=gridMaxRow; r++){
+    let cnt = 0;
+    for(let c=gridMinCol; c<=gridMaxCol; c++) if(covered.has(r+','+c)) cnt++;
+    if(cnt % 2 !== 0) badRows.push(r);
+  }
+  for(let c=gridMinCol; c<=gridMaxCol; c++){
+    let cnt = 0;
+    for(let r=gridMinRow; r<=gridMaxRow; r++) if(covered.has(r+','+c)) cnt++;
+    if(cnt % 2 !== 0) badCols.push(c);
+  }
+
+  if(badRows.length === 0 && badCols.length === 0){
+    puzzleSolved = true;
+    const elapsed = formatElapsed(Date.now() - puzzleStartTime);
+    stopPuzzleTimer();
+    document.getElementById('puzzle-timer').textContent = 'Time: ' + elapsed;
+    showCongratsModal(elapsed);
+    return;
+  }
+
+  badRows.forEach(r=>{
+    boardEl.querySelectorAll(`.board-cell[data-r="${r}"]`).forEach(el=>el.classList.add('parity-odd'));
+  });
+  badCols.forEach(c=>{
+    boardEl.querySelectorAll(`.board-cell[data-c="${c}"]`).forEach(el=>el.classList.add('parity-odd'));
+  });
 }
 
 /* ═══════════════════════════════════════════════
@@ -1403,6 +1527,10 @@ function renderPlacedPieces(){
 function renderAll(){
   renderPlacedPieces();
   updateSelToolbar();
+  if(activeTab !== 'sandbox'){
+    renderPuzzleTiles(activeTab);
+    checkPuzzleProgress();
+  }
 }
 
 /* ═══════════════════════════════════════════════
@@ -2393,6 +2521,9 @@ function closeHowToPlay(){
 }
 document.getElementById('how-to-play-btn').addEventListener('click', openHowToPlay);
 document.getElementById('how-to-play-close').addEventListener('click', closeHowToPlay);
+document.getElementById('congrats-close').addEventListener('click', ()=>{
+  document.getElementById('congrats-modal').classList.add('hidden');
+});
 
 /* ═══════════════════════════════════════════════
    INIT

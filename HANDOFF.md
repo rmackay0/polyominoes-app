@@ -211,9 +211,12 @@ is derivable from the code yet, since most of it isn't built):
   blocking/unblocking a cell can invalidate or un-invalidate whatever's
   sitting on it; `blockedCells` is included in the undo snapshot alongside
   grid bounds. CSS: `.board-cell.blocked` (dashed border, `--bg` fill) plus
-  a `::after` pseudo-element showing a red checkmark (`\2713`, `#e05252`)
-  centered on the cell — an explicit user request ("red checkmarks instead
-  of holes") over the plain dashed-empty look it originally had.
+  a `::after` pseudo-element showing a red X (`\2715`, `#e05252`) centered
+  on the cell — originally a checkmark (`\2713`) per an explicit "red
+  checkmarks instead of holes" request, changed to an X one message later
+  when the user clarified that was actually what they meant (they'd drawn
+  X's in their sketch the whole time). If asked to change this glyph
+  again, it's this one `content` value in `.board-cell.blocked::after`.
 - **Checkerboard / color scheme overlay**: `checkerboardEnabled` toggle
   colors the grid using one of three schemes in the `COLOR_SCHEMES`
   registry — `checkerboard` ((r+c) mod 2), `stripes2` (r mod 2), `stripes3`
@@ -269,13 +272,57 @@ is derivable from the code yet, since most of it isn't built):
   **Puzzle data format**: each `PUZZLES` entry is `{title, rows, cols,
   blocked: [[r,c],...], pieces: [{name,color,cells},...]}` — `cells` are
   relative coordinates exactly like `STANDARD_PIECES`/`PENTOMINO_PIECES`.
-  `test-puzzle-1`'s 6 pieces and 2 blocked cells were extracted directly
-  from a user-provided sketch image (colors eyeballed/approximated, shapes
-  verified cell-by-cell — 4 of the 6 matched an existing
-  `PENTOMINO_PIECES` shape exactly, confirming the extraction was
-  accurate; the other 2 were the same pentomino type in a different
-  rotation, which is expected and fine since puzzles define their own
-  exact cells rather than referencing the catalog).
+  `test-puzzle-1`'s 6 pieces were extracted directly from a user-provided
+  sketch image (colors eyeballed/approximated, shapes verified cell-by-
+  cell — 4 of the 6 matched an existing `PENTOMINO_PIECES` shape exactly,
+  confirming the extraction was accurate; the other 2 were the same
+  pentomino type in a different rotation, expected and fine since puzzles
+  define their own exact cells rather than referencing the catalog). Its
+  blocked cells were revised once already: originally `[[2,3],[3,2]]`
+  (from green X's in the first sketch), changed 2026-10-15 to
+  `[[1,1],[4,2]]` (red X's in a follow-up sketch; the green-X cells were
+  explicitly reopened). **Known issue: as of the current piece set and
+  blocked cells, this puzzle has no valid solution** — confirmed by an
+  exhaustive brute-force search (all 6 pieces, every rotation/reflection,
+  every non-overlapping placement avoiding the blocked cells) that found
+  zero arrangements satisfying the row/column-even-parity win condition,
+  for *both* the original and the current blocked-cell positions. The
+  same search succeeds instantly with zero blocked cells, so the piece set
+  itself isn't the problem — it's specifically these blocked-cell choices.
+  The user has not yet been asked to pick new ones; don't silently "fix"
+  this by moving the blocked cells without checking first, since where
+  they go is their call, not an implementation detail.
+- **Puzzle progress (timer + win check)**: live-checked inside `renderAll()`
+  whenever `activeTab !== 'sandbox'` (`checkPuzzleProgress()`), so it
+  re-evaluates after every discrete mutation (place/move/rotate/delete/
+  undo) without needing calls scattered at each site. Implements the win
+  condition exactly: returns early (no highlight, no popup) unless
+  `placedPieces.length === puzzle.pieces.length`, `pendingPlacementIds` is
+  empty, and there's exactly one placed piece per puzzle piece name (guards
+  against e.g. Duplicate creating a second copy of one type — that's
+  correctly treated as "not done," not crashed on). Once genuinely
+  complete, tallies covered cells per row/column: all even → **solved**
+  (stops the timer via `stopPuzzleTimer()`, freezes `#puzzle-timer`'s text
+  at the exact elapsed time, shows `#congrats-modal` with that same time
+  string — computed once and reused for both, not read twice, to avoid a
+  tick of drift between them); any odd → adds `.parity-odd` to every cell
+  in the offending row(s)/column(s) (`box-shadow: inset`, reuses
+  `--invalid-border` red rather than a new color). `puzzleSolved` latches
+  true on solve so the popup doesn't re-fire on later interaction (e.g.
+  clicking to select the solved pieces) — reset to `false` by
+  `startPuzzleTimer()` on each fresh puzzle-tab entry.
+  **Timer**: `startPuzzleTimer()`/`stopPuzzleTimer()`, `#puzzle-timer`
+  (shown only while a puzzle tab is active, mirrors `#section-puzzle`'s
+  visibility toggling in `switchToPuzzle`/`switchToSandbox`), updates every
+  500ms via `setInterval`, `formatElapsed(ms)` → `"M:SS"`. Resets fresh on
+  every puzzle-tab entry (consistent with the tab already resetting
+  `placedPieces` etc. fresh each time — see "Puzzle tabs" above).
+  **Tray consumption**: `renderPuzzleTiles()` grays out
+  (`.tile.consumed { opacity:0.3; pointer-events:none; }`) any tile whose
+  name already has an instance in `placedPieces`, and un-grays it the
+  moment that piece is deleted (recomputed fresh every call, not tracked
+  as separate state) — this is what makes "every piece placed" legible to
+  the player as the tray visibly draining, not just an invisible rule.
 - **Selected-piece glow**: `.placed-piece.selected .piece-svg` uses a
   single white `drop-shadow` (2px blur, 75% opacity) plus a dark
   drop-shadow for depth. This value has been tuned back and forth — see

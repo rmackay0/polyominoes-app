@@ -246,7 +246,7 @@ is derivable from the code yet, since most of it isn't built):
   "all the way to .5").
 - **Puzzle tabs**: a tab bar (`#tab-bar`, built by `renderTabBar()`) lists
   "Sandbox" plus one button per entry in the `PUZZLES` registry (currently
-  just `test-puzzle-1`, "Test Puzzle #1"). Clicking a puzzle tab
+  `test-puzzle-1` and `test-puzzle-2`). Clicking a puzzle tab
   (`switchToPuzzle(key)`) takes over the shared board/tray UI: grid bounds
   set to the puzzle's `rows`/`cols` (always 0-based), `blockedCells`
   replaced with the puzzle's `blocked` list, `placedPieces`/selection/
@@ -303,17 +303,74 @@ is derivable from the code yet, since most of it isn't built):
      particular choice of 4 wasn't forced, any of the 15 would have worked
      equally well. Verified end-to-end in the app itself (injecting the
      solution's placements and confirming `#congrats-modal` fires), not
-     just in the standalone solver. **Difficulty**: 2,088 ways exist to
-     place all 6 pieces without overlap; only 2 (a mirrored pair) satisfy
-     the parity rule — about 1-in-1,044 odds for a "looks fine" placement
-     to actually be right, and the app only evaluates the parity rule once
-     every piece is placed and valid, so there's no partial/warmer-colder
-     feedback along the way. This is a genuinely hard puzzle, not a casual
-     one — expected and accepted, not a bug.
+     just in the standalone solver. **Difficulty**: with these 4 blocked
+     cells, 74 ways exist to place all 6 pieces without overlap; only 1
+     satisfies the parity rule — about 1-in-74 odds for a "looks fine"
+     placement to actually be right. (An earlier 2-blocked-cell version of
+     this same fix, `[[1,1],[5,5]]`, was looser — 2,088 total placements,
+     1-in-1,044 — before the user asked to tighten it to 4 blocked cells;
+     that number is stale anywhere else it might still appear.) The app
+     only evaluates the parity rule once every piece is placed and valid,
+     so there's no partial/warmer-colder feedback along the way — discussed
+     directly with the user, who chose to keep it this way for now rather
+     than add live row/column counters (noted as the natural follow-up
+     below). This is a genuinely hard puzzle, not a casual one — expected
+     and accepted, not a bug.
   If this ever needs revisiting again: the pattern that worked was picking
   a known zero-blocked solution first, then blocking only cells that
   solution doesn't use — trying to pick blocked cells first and hoping a
-  solution exists is what caused step 2's failure.
+  solution exists is what caused step 2's failure. **Possible future
+  follow-up, discussed but not built**: live per-row/column covered-cell
+  counters while placing pieces (not just the end-state pass/fail check),
+  which would shift the puzzle from "mostly trial-and-error, a little
+  logical deduction" toward more logical deduction — the user chose to
+  keep the current all-or-nothing-at-the-end feedback for now.
+- **Test Puzzle #2 (added 2026-10-16)**: a second `PUZZLES` entry
+  (`test-puzzle-2`), extracted the same way as #1 — from a user-provided
+  screenshot, verified cell-by-cell before shipping (reconstructed the
+  drawn arrangement in a standalone script and confirmed: no overlaps, no
+  out-of-bounds, 30/30 open cells covered, every row/column even — the
+  user had drawn a *complete, pre-solved* layout this time, not just a
+  piece reference, and it checked out). Introduced two new, generalized
+  `PUZZLES` fields beyond what #1 uses:
+  - **`hiddenBlocked: [[r,c],...]`** — a subset of `blocked` that's
+    functionally blocked (placement/counts/parity all treat it exactly
+    like any other blocked cell — `isBlocked()` is unchanged) but rendered
+    with **zero visual difference from a normal open cell**: no dashed
+    border, no X, nothing. `isVisiblyBlocked(r,c)` is the new check
+    (`isBlocked(r,c) && not in hiddenBlocked`); `setupBoard()`'s per-cell
+    className now branches on `isVisiblyBlocked`, not `isBlocked`, for
+    both the `.blocked` class and whether to suppress the checkerboard
+    pattern class — a hidden cell shows the checkerboard pattern like any
+    other open cell would, on purpose, since full indistinguishability is
+    the point. The open/total counts (`#holes-count`/`#total-count`)
+    deliberately still use the *true* `isBlocked` count, not just the
+    visible one — a player who does the arithmetic can infer hidden cells
+    exist, just not where; that's an accepted/intended mystery mechanic,
+    not an oversight. Test Puzzle #2 blocks 6 cells total, shows 4 (the
+    "right side" ones, matching which half of the board they're in — `c`
+    index 3,4,5) and hides 2 (the "left side" ones).
+  - **`hintOutline: [[r,c],...]` + `hintText: "..."`** — an optional
+    static dashed outline traced around an arbitrary region of absolute
+    board cells, with a caption. `renderHintOverlay()` (called from
+    `setupBoard()`, so it refreshes on cell-size/grid changes same as the
+    checker overlay) reuses `buildOutlinePath`/`SVG_NS` — the exact same
+    boundary-walk geometry already used for piece outlines — fed the hint
+    region instead of a piece's cells, so it traces one smooth connected
+    boundary (not per-cell borders) regardless of the region's shape. Lives
+    in `#hint-overlay`, a new layer in `#board-outer` stacked above
+    `#pieces-layer`/`#checker-overlay` (z-index 500) so it's never hidden
+    by a placed piece. For #2, the outlined region is the union of the X
+    and T pieces' cells in the solution (10 cells, one connected shape
+    since the two pieces' cells happen to touch), captioned "The outlined
+    cells can only be covered by two of the six pieces." — a logical
+    anchor (narrows the search meaningfully) without fully revealing the
+    solution for that region.
+  - `test-puzzle-1` leaves both fields undefined; `renderHintOverlay()` and
+    the `isVisiblyBlocked` hidden-cell check both no-op cleanly when a
+    puzzle doesn't define them (checked via `PUZZLES[activeTab]` directly,
+    not a separate per-tab flag), so neither feature needed any
+    puzzle‑#1‑specific changes.
 - **Puzzle progress (timer + win check)**: live-checked inside `renderAll()`
   whenever `activeTab !== 'sandbox'` (`checkPuzzleProgress()`), so it
   re-evaluates after every discrete mutation (place/move/rotate/delete/
